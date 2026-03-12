@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { useUVData } from "./useUVData";
 import { motion } from "framer-motion";
+
 import {
   Sun,
   MapPin,
@@ -144,7 +146,7 @@ function getUvMeta(uv) {
   if (uv <= 2) {
     return {
       level: "Low",
-      message: "You’re not at immediate risk of UV damage, but basic protection is still a good habit.",
+      message: "You're not at immediate risk of UV damage, but basic protection is still a good habit.",
       badgeClass: "bg-emerald-100 text-emerald-700 border-emerald-200",
       ring: "from-emerald-400 to-lime-300",
     };
@@ -152,7 +154,7 @@ function getUvMeta(uv) {
   if (uv <= 5) {
     return {
       level: "Moderate",
-      message: "Be cautious outdoors and protect exposed skin if you’re staying outside for longer.",
+      message: "Be cautious outdoors and protect exposed skin if you're staying outside for longer.",
       badgeClass: "bg-yellow-100 text-yellow-800 border-yellow-200",
       ring: "from-yellow-400 to-amber-300",
     };
@@ -188,15 +190,346 @@ function StatPill({ icon: Icon, label, value }) {
 export default function SunSmartUIMockup() {
   const [selectedTab, setSelectedTab] = useState("dashboard");
   const [uvIndex, setUvIndex] = useState(9);
-  const [location, setLocation] = useState("Melbourne, VIC");
+  const [myLocation, setMyLocation] = useState("Your location"); // GPS location — never changes on search
+  const [searchedLocation, setSearchedLocation] = useState("Melbourne, VIC"); // changes when user searches
+  const [latitude, setLatitude] = useState(-37.8136);
+  const [longitude, setLongitude] = useState(144.9631);
+  const [locationTimezone, setLocationTimezone] = useState(null); // IANA timezone string from API
+  const { uvIndex: realUV, loading: uvLoading } = useUVData(latitude, longitude, locationTimezone);
+  // realUV of 0 means night-time (no UV). Show the real value but let
+  // the slider still be used as a manual override when real data is 0.
+  const isNightTime = realUV === 0;
+  const displayUV = (realUV !== null && realUV !== undefined) ? realUV : uvIndex;
+
   const [skinTone, setSkinTone] = useState(skinToneOptions[1]);
   const [email, setEmail] = useState("student@monash.edu");
-  const [startTime, setStartTime] = useState("09:00");
+  const [startTime, setStartTime] = useState(() => {
+    const now = new Date();
+    return now.toTimeString().slice(0, 5); // "HH:MM"
+  });
   const [interval, setInterval] = useState("2 hours");
+  const [intervalValue, setIntervalValue] = useState(2);
+  const [intervalUnit, setIntervalUnit] = useState("hours");
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const reminderRef = React.useRef(null);
+  const alertedRef = React.useRef(false);
 
-  const uvMeta = useMemo(() => getUvMeta(uvIndex), [uvIndex]);
+  const uvMeta = useMemo(() => getUvMeta(displayUV), [displayUV]);
   const clothingTips = clothingByRisk[uvMeta.level];
   const sunscreenTip = sunscreenByRisk[uvMeta.level];
+
+  useEffect(() => {
+    if (displayUV >= 3 && !alertedRef.current && Notification.permission === "granted") {
+      alertedRef.current = true;
+      new Notification("⚠️ UV Alert - SunSmart", {
+        body: `UV index is now ${displayUV} (${uvMeta.level}) in ${searchedLocation}. Apply sunscreen before going outside!`,
+        icon: "/favicon.ico",
+      });
+    }
+  }, [displayUV]);
+
+  const handleEnableReminder = async () => {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      alert("Please allow notifications to enable reminders.");
+      return;
+    }
+
+    if (reminderRef.current) clearInterval(reminderRef.current);
+
+    const unitMs = intervalUnit === "minutes" ? 60 * 1000 : intervalUnit === "hours" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const intervalMs = intervalValue * unitMs;
+
+    const [hours, minutes] = startTime.split(":").map(Number);
+    const firstReminder = new Date();
+    firstReminder.setHours(hours, minutes, 0, 0);
+
+    const now = new Date();
+    // If the chosen time is in the past (or within 10s), fire the first one immediately
+    const delayMs = firstReminder > now ? firstReminder - now : 0;
+
+    const fireNotification = () => {
+      new Notification("☀️ SunSmart Reminder", {
+        body: `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. Time to reapply sunscreen!`,
+        icon: "/favicon.ico",
+      });
+    };
+
+    if (delayMs === 0) {
+      fireNotification();
+      reminderRef.current = window.setInterval(fireNotification, intervalMs);
+    } else {
+      setTimeout(() => {
+        fireNotification();
+        reminderRef.current = window.setInterval(fireNotification, intervalMs);
+      }, delayMs);
+    }
+
+    setReminderEnabled(true);
+    const fireTimeStr = delayMs === 0 ? "now" : startTime;
+    alert(`Reminder set! First notification ${fireTimeStr === "now" ? "firing now" : "at " + startTime}, then every ${intervalValue} ${intervalUnit}.`);
+  };
+
+  const handleDisableReminder = () => {
+    if (reminderRef.current) {
+      clearInterval(reminderRef.current);
+      reminderRef.current = null;
+    }
+    setReminderEnabled(false);
+    alert("Reminder disabled.");
+  };
+
+  const handleDownloadInfo = () => {
+    const canvas = document.createElement("canvas");
+    const scale = 2; // retina
+    const W = 480, H = 600;
+    canvas.width = W * scale;
+    canvas.height = H * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+
+    const level = uvMeta.level;
+    const gradients = {
+      Low:      ["#34d399", "#6ee7b7"],
+      Moderate: ["#fbbf24", "#fde68a"],
+      High:     ["#f97316", "#fbbf24"],
+      Extreme:  ["#f43f5e", "#a855f7"],
+    };
+    const textColors = { Low: "#065f46", Moderate: "#78350f", High: "#fff", Extreme: "#fff" };
+    const [g1, g2] = gradients[level] || gradients.Low;
+
+    // Background
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, W, H);
+
+    // Card
+    ctx.fillStyle = "#ffffff";
+    roundRect(ctx, 24, 24, W - 48, H - 48, 20);
+    ctx.fill();
+
+    // Header stripe
+    const grad = ctx.createLinearGradient(24, 24, W - 24, 24);
+    grad.addColorStop(0, g1);
+    grad.addColorStop(1, g2);
+    ctx.fillStyle = grad;
+    roundRectTop(ctx, 24, 24, W - 48, 140, 20);
+    ctx.fill();
+
+    // UV number
+    ctx.fillStyle = textColors[level];
+    ctx.font = "bold 72px system-ui, sans-serif";
+    ctx.fillText(String(displayUV), 44, 110);
+
+    // Risk badge
+    ctx.font = "bold 15px system-ui, sans-serif";
+    const badgeW = ctx.measureText(level + " Risk").width + 24;
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    roundRect(ctx, 44, 120, badgeW, 28, 14);
+    ctx.fill();
+    ctx.fillStyle = textColors[level];
+    ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.fillText(level + " Risk", 44 + 12, 139);
+
+    // Location + date
+    const date = new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" });
+    ctx.fillStyle = "#64748b";
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText("📍 " + searchedLocation + "  ·  " + date, 44, 192);
+
+    // UV message
+    ctx.fillStyle = "#1e293b";
+    ctx.font = "bold 15px system-ui, sans-serif";
+    ctx.fillText("UV Alert", 44, 222);
+    ctx.fillStyle = "#475569";
+    ctx.font = "13px system-ui, sans-serif";
+    wrapText(ctx, uvMeta.message, 44, 242, W - 88, 20);
+
+    // Divider
+    ctx.strokeStyle = "#f1f5f9";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(44, 295); ctx.lineTo(W - 44, 295); ctx.stroke();
+
+    // Sunscreen section
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.fillText("🧴  SUNSCREEN", 44, 322);
+    ctx.fillStyle = "#475569";
+    ctx.font = "13px system-ui, sans-serif";
+    wrapText(ctx, sunscreenTip, 44, 342, W - 88, 20);
+
+    // Divider
+    ctx.strokeStyle = "#f1f5f9";
+    ctx.beginPath(); ctx.moveTo(44, 385); ctx.lineTo(W - 44, 385); ctx.stroke();
+
+    // Clothing section
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.fillText("👕  CLOTHING", 44, 410);
+    ctx.fillStyle = "#475569";
+    ctx.font = "13px system-ui, sans-serif";
+    clothingTips.forEach((tip, i) => {
+      ctx.fillText("• " + tip, 44, 432 + i * 22);
+    });
+
+    // Footer
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText("Generated by SunSmart UV Awareness App", 44, H - 38);
+
+    // Export
+    const link = document.createElement("a");
+    link.download = "sunsmart-uv-" + searchedLocation.replace(/[^a-z0-9]/gi, "-").toLowerCase() + ".png";
+    link.href = canvas.toDataURL("image/png");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function roundRectTop(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function wrapText(ctx, text, x, y, maxW, lineH) {
+    const words = text.split(" ");
+    let line = "";
+    for (const word of words) {
+      const test = line + word + " ";
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line.trim(), x, y);
+        y += lineH; line = word + " ";
+      } else { line = test; }
+    }
+    ctx.fillText(line.trim(), x, y);
+  }
+
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [citySearch, setCitySearch] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = React.useRef(null);
+  const debounceRef = React.useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleCityInput = (value) => {
+    setCitySearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=6&addressdetails=1`
+        );
+        const data = await res.json();
+        setSuggestions(data);
+        setShowSuggestions(true);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 350);
+  };
+
+  const handleSelectSuggestion = async (item) => {
+    const lat = parseFloat(item.lat);
+    const lon = parseFloat(item.lon);
+    setLatitude(lat);
+    setLongitude(lon);
+    const a = item.address || {};
+    const nameParts = [
+      a.road || a.pedestrian || a.neighbourhood || a.suburb || a.quarter,
+      a.suburb || a.city_district || a.town || a.city || a.village || a.county,
+      a.state_code || a.state,
+      a.country_code ? a.country_code.toUpperCase() : null,
+    ].filter(Boolean);
+    const cleanName = nameParts.length >= 2
+      ? nameParts.slice(0, 3).join(", ")
+      : item.display_name.split(",").slice(0, 2).join(",").trim();
+    setSearchedLocation(cleanName);
+    setCitySearch("");
+    setSuggestions([]);
+    setShowSuggestions(false);
+    // Fetch timezone for the selected location so UV hour is correct
+    try {
+      const tzRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=uv_index&timezone=auto&forecast_days=1`);
+      const tzData = await tzRes.json();
+      if (tzData.timezone) setLocationTimezone(tzData.timezone);
+    } catch { /* ignore, useUVData will fall back */ }
+  };
+
+  const handleGetGPS = () => {
+    if (!navigator.geolocation) {
+      alert("Your browser does not support GPS.");
+      return;
+    }
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude: lat, longitude: lng } = position.coords;
+        setLatitude(lat);
+        setLongitude(lng);
+        try {
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16&addressdetails=1`);
+          const geoData = await geoRes.json();
+          const suburb =
+            geoData.address.quarter ||
+            geoData.address.neighbourhood ||
+            geoData.address.suburb ||
+            geoData.address.city_district ||
+            geoData.address.city ||
+            geoData.address.town ||
+            geoData.address.village ||
+            geoData.address.state;
+          const state = geoData.address.state_code || geoData.address.state;
+          setMyLocation(`${suburb}, ${state}`);
+          setSearchedLocation(`${suburb}, ${state}`);
+        } catch {
+          setMyLocation(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+          setSearchedLocation(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+        }
+        setLocationTimezone(null); // reset so useUVData uses device timezone for GPS
+        setGpsLoading(false);
+      },
+      (error) => {
+        alert("Could not get your location. Please allow location access.");
+        setGpsLoading(false);
+      }
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] text-slate-900">
@@ -219,7 +552,7 @@ export default function SunSmartUIMockup() {
                   </Badge>
                 </div>
                 <p className="text-sm text-slate-500">
-                  A calm, mobile-first dashboard for UV alerts, awareness, and daily protection planning.
+                  We help you enjoy the sun risk-free.
                 </p>
               </div>
             </div>
@@ -262,12 +595,11 @@ export default function SunSmartUIMockup() {
                       Real-time UV guidance that feels simple, clear, and actually useful.
                     </h2>
                     <p className="mt-4 max-w-2xl text-slate-600">
-                      The landing experience is built around the core story requirement: current location, current UV index,
-                      risk messaging, and immediate protection suggestions in one glance.
+                      This section helps you determine the risk level and the appropriate measures you need to take according to the UV Index of a location.
                     </p>
 
                     <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                      <StatPill icon={MapPin} label="Location" value={location} />
+                      <StatPill icon={MapPin} label="Location" value={searchedLocation} />
                       <StatPill icon={TriangleAlert} label="Risk level" value={uvMeta.level} />
                       <StatPill icon={Bell} label="Reminder mode" value="Email / Push ready" />
                     </div>
@@ -282,12 +614,17 @@ export default function SunSmartUIMockup() {
                         <CloudSun className="h-5 w-5 text-white/90" />
                       </div>
                       <div className="flex items-end gap-3">
-                        <span className="text-7xl font-bold leading-none">{uvIndex}</span>
+                        <span className="text-7xl font-bold leading-none">{displayUV}</span>
                         <Badge className="mb-2 rounded-full border-0 bg-white/15 px-3 py-1 text-white shadow-none">
                           {uvMeta.level}
                         </Badge>
                       </div>
                       <p className="mt-4 text-sm leading-6 text-white/90">{uvMeta.message}</p>
+                      {isNightTime && (
+                        <p className="mt-2 text-xs text-white/60 flex items-center gap-1">
+                          🌙 UV is 0 — no solar UV at night. Use the slider to simulate daytime levels.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -305,38 +642,66 @@ export default function SunSmartUIMockup() {
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Sparkles className="h-5 w-5" /> Quick controls
                 </CardTitle>
-                <CardDescription>Use these inputs to demo the UI and test connected features later.</CardDescription>
+                <CardDescription>Use the "Current location" option or the "Search any location" option below.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="space-y-2">
-                  <Label>Demo location</Label>
-                  <Input value={location} onChange={(e) => setLocation(e.target.value)} className="rounded-xl bg-white" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>UV index</Label>
-                    <span className="text-sm text-slate-500">1–11+</span>
+                  <Label>Current location</Label>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    {myLocation}
                   </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={11}
-                    value={uvIndex}
-                    onChange={(e) => setUvIndex(Number(e.target.value))}
-                    className="w-full"
-                  />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">
-                    <MapPin className="mr-2 h-4 w-4" /> Use current GPS
-                  </Button>
-                  <Button variant="outline" className="rounded-xl bg-white/70">
-                    <Share2 className="mr-2 h-4 w-4" /> Share alert
-                  </Button>
+                <div className="space-y-2" ref={searchRef}>
+                  <Label>Search any location</Label>
+                  <div className="relative">
+                    <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 gap-2 focus-within:ring-2 focus-within:ring-slate-900 focus-within:border-transparent transition-all">
+                      <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                      <input
+                        value={citySearch}
+                        onChange={(e) => handleCityInput(e.target.value)}
+                        onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                        placeholder="Search suburb, city or landmark..."
+                        className="flex-1 py-2.5 text-sm bg-transparent outline-none placeholder:text-slate-400"
+                      />
+                      {suggestionsLoading && (
+                        <span className="text-xs text-slate-400 shrink-0">searching…</span>
+                      )}
+                    </div>
+                    {showSuggestions && suggestions.length > 0 && (
+                      <div className="absolute z-50 mt-1 w-full rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+                        {suggestions.map((item, idx) => {
+                          const a = item.address || {};
+                          const primary = a.road || a.pedestrian || a.neighbourhood || a.suburb || a.city || a.town || a.village || item.display_name.split(",")[0];
+                          const secondary = item.display_name.split(",").slice(1, 3).join(",").trim();
+                          const typeIcon = item.type === "administrative" || item.class === "place" ? "🏙️"
+                            : item.class === "railway" || item.class === "highway" ? "📍"
+                            : item.class === "amenity" ? "📌" : "📍";
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleSelectSuggestion(item)}
+                              className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors"
+                            >
+                              <span className="text-base mt-0.5 shrink-0">{typeIcon}</span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-900 truncate">{primary}</p>
+                                <p className="text-xs text-slate-500 truncate">{secondary}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                <Button className="w-full rounded-xl bg-slate-900 hover:bg-slate-800" onClick={handleGetGPS}>
+                  <MapPin className="mr-2 h-4 w-4" /> {gpsLoading ? "Detecting location..." : "Use current GPS"}
+                </Button>
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
-                  This design keeps the primary alert above the fold, then uses modular sections for awareness, skin tone,
-                  sunscreen, clothing, and reminder tasks.
+                  You can make use of the "Current location" option to use your current location for the UV index checker. You can also select an address from the "Search any location" option
+                  for checking the UV Index of a different place.
                 </div>
               </CardContent>
             </Card>
@@ -354,7 +719,7 @@ export default function SunSmartUIMockup() {
                     <TriangleAlert className="h-5 w-5" /> UV alert and response
                   </CardTitle>
                   <CardDescription>
-                    Supports the acceptance criteria for colour-coded UV alerts, warning text, and suggested measures.
+                    {/* sample text for the UV alert and response card */}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -397,7 +762,7 @@ export default function SunSmartUIMockup() {
                     <Bell className="h-5 w-5" /> Sunscreen reminder
                   </CardTitle>
                   <CardDescription>
-                    Designed as a clean settings card so your teammate can connect email, SMS, or push logic later.
+                    You can choose to opt for a application reminder which will enable us to help you remember your suncreen application!
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -408,15 +773,26 @@ export default function SunSmartUIMockup() {
                     </div>
                     <div className="space-y-2">
                       <Label>Reminder interval</Label>
-                      <select
-                        value={interval}
-                        onChange={(e) => setInterval(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-                      >
-                        <option>2 hours</option>
-                        <option>3 hours</option>
-                        <option>4 hours</option>
-                      </select>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={intervalValue}
+                          onChange={(e) => setIntervalValue(e.target.value)}
+                          className="rounded-xl w-24"
+                          placeholder="e.g. 2"
+                        />
+                        <select
+                          value={intervalUnit}
+                          onChange={(e) => setIntervalUnit(e.target.value)}
+                          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+                        >
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -424,11 +800,28 @@ export default function SunSmartUIMockup() {
                     <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">Enable reminder</Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Preview notification</Button>
+                    <Button
+                      className="rounded-xl bg-slate-900 hover:bg-slate-800"
+                      onClick={reminderEnabled ? handleDisableReminder : handleEnableReminder}
+                    >
+                      {reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
+                    </Button>
+                    <Button variant="outline" className="rounded-xl bg-white" onClick={async () => {
+                      const perm = Notification.permission === "granted"
+                        ? "granted"
+                        : await Notification.requestPermission();
+                      if (perm === "granted") {
+                        new Notification("☀️ SunSmart Preview", {
+                          body: `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. This is what your reminders will look like!`,
+                          icon: "/favicon.ico",
+                        });
+                      } else {
+                        alert("Notifications are blocked. Please allow them in your browser settings (click the lock icon in the address bar).");
+                      }
+                    }}>Preview notification</Button>
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                    Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every <span className="font-medium text-slate-900">{interval}</span>.
+                    Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every <span className="font-medium text-slate-900">{intervalValue} {intervalUnit}</span>.
                   </div>
                 </CardContent>
               </Card>
@@ -615,10 +1008,10 @@ export default function SunSmartUIMockup() {
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Shirt className="h-5 w-5" /> Clothing recommendation planner
+                    <Shirt className="h-5 w-5" /> Clothing recommendation
                   </CardTitle>
                   <CardDescription>
-                    This section turns UV risk into action-oriented clothing suggestions with a cleaner card-based layout.
+                    Here are some tips from us in order to help you stay safe under the sun!
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -658,27 +1051,43 @@ export default function SunSmartUIMockup() {
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Share2 className="h-5 w-5" /> Share awareness content
+                    <Share2 className="h-5 w-5" /> Share it!
                   </CardTitle>
                   <CardDescription>
-                    Kept intentionally simple so the team can implement a practical share flow without overengineering the prototype.
+                    If you found our tips and info useful, share it with your friends! or click the download option to download this card as an image!
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="rounded-3xl bg-slate-950 p-5 text-white">
-                    <p className="text-sm text-white/70">Preview caption</p>
-                    <p className="mt-3 text-lg font-semibold">Today's UV in {location} is {uvIndex} ({uvMeta.level}). Protect your skin and remind your friends to stay sun smart.</p>
+                  <div id="uv-info-card" className="rounded-3xl bg-slate-950 p-5 text-white">
+                    <p className="text-sm text-white/70">☀️ SunSmart UV Info — {new Date().toLocaleDateString("en-AU", {weekday:"long",day:"numeric",month:"long"})}</p>
+                    <p className="mt-1 text-sm text-white/60">📍 {searchedLocation}</p>
+                    <p className="mt-3 text-4xl font-bold">{displayUV} <span className="text-lg font-normal text-white/70">UV Index</span></p>
+                    <p className="mt-1 text-base font-semibold">{uvMeta.level} Risk</p>
+                    <p className="mt-3 text-sm text-white/80">{uvMeta.message}</p>
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <p className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-1">Sunscreen</p>
+                      <p className="text-sm text-white/80">{sunscreenTip}</p>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-1">Clothing</p>
+                      {clothingTips.map((tip) => (
+                        <p key={tip} className="text-sm text-white/80">• {tip}</p>
+                      ))}
+                    </div>
+                    <p className="mt-4 text-xs text-white/30">Generated by SunSmart UV Awareness App</p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">Share to Instagram</Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Copy share text</Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Download awareness card</Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Open social preview</Button>
-                  </div>
-
-                  <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm leading-6 text-slate-600">
-                    For the prototype, a share button and preview card are enough. Later, your teammate can connect actual platform logic or a simple native share workflow.
+                    <Button className="rounded-xl bg-slate-900 hover:bg-slate-800" onClick={() => {
+                      if (navigator.share) {
+                        navigator.share({ title: "SunSmart UV Alert", text: `Today's UV in ${searchedLocation} is ${displayUV} (${uvMeta.level}). Protect your skin and remind your friends to stay sun smart.` });
+                      } else {
+                        alert("Sharing not supported on this browser.");
+                      }
+                    }}>Share</Button>
+                    <Button variant="outline" className="rounded-xl bg-white" onClick={handleDownloadInfo} id="download-info-btn">
+                      Download
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -688,8 +1097,8 @@ export default function SunSmartUIMockup() {
 
         <footer className="mt-8 rounded-[28px] border border-white/70 bg-white/70 p-5 text-sm text-slate-500 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p>Designed for your SunSmart UV awareness prototype with a stronger mainstream UI/UX direction.</p>
-            <p>React + shadcn/ui + Framer Motion + Recharts</p>
+            <p>This is a prototype for the full application. Stay tuned!</p>
+            <p>SunSmart ©</p>
           </div>
         </footer>
       </div>
