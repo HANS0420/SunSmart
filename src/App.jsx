@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { useUVData } from "./useUVData";
 import { motion } from "framer-motion";
+
 import {
   Sun,
   MapPin,
@@ -144,7 +146,7 @@ function getUvMeta(uv) {
   if (uv <= 2) {
     return {
       level: "Low",
-      message: "You’re not at immediate risk of UV damage, but basic protection is still a good habit.",
+      message: "You're not at immediate risk of UV damage, but basic protection is still a good habit.",
       badgeClass: "bg-emerald-100 text-emerald-700 border-emerald-200",
       ring: "from-emerald-400 to-lime-300",
     };
@@ -152,7 +154,7 @@ function getUvMeta(uv) {
   if (uv <= 5) {
     return {
       level: "Moderate",
-      message: "Be cautious outdoors and protect exposed skin if you’re staying outside for longer.",
+      message: "Be cautious outdoors and protect exposed skin if you're staying outside for longer.",
       badgeClass: "bg-yellow-100 text-yellow-800 border-yellow-200",
       ring: "from-yellow-400 to-amber-300",
     };
@@ -189,14 +191,111 @@ export default function SunSmartUIMockup() {
   const [selectedTab, setSelectedTab] = useState("dashboard");
   const [uvIndex, setUvIndex] = useState(9);
   const [location, setLocation] = useState("Melbourne, VIC");
+  const [latitude, setLatitude] = useState(-37.8136);
+const [longitude, setLongitude] = useState(144.9631);
+  const { uvIndex: realUV, loading: uvLoading } = useUVData(latitude, longitude);
+  const displayUV = realUV ?? uvIndex;
+
   const [skinTone, setSkinTone] = useState(skinToneOptions[1]);
   const [email, setEmail] = useState("student@monash.edu");
   const [startTime, setStartTime] = useState("09:00");
   const [interval, setInterval] = useState("2 hours");
+  const [intervalValue, setIntervalValue] = useState(2);
+  const [intervalUnit, setIntervalUnit] = useState("hours");
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const reminderRef = React.useRef(null);
+  const alertedRef = React.useRef(false);
 
-  const uvMeta = useMemo(() => getUvMeta(uvIndex), [uvIndex]);
+  const uvMeta = useMemo(() => getUvMeta(displayUV), [displayUV]);
   const clothingTips = clothingByRisk[uvMeta.level];
   const sunscreenTip = sunscreenByRisk[uvMeta.level];
+
+  useEffect(() => {
+    if (displayUV >= 3 && !alertedRef.current) {
+      alertedRef.current = true;
+      new Notification("⚠️ UV Alert - SunSmart", {
+        body: `UV index is now ${displayUV} (${uvMeta.level}) in ${location}. Apply sunscreen before going outside!`,
+      });
+    }
+  }, [displayUV]);
+
+  const handleEnableReminder = async () => {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      alert("Please allow notifications to enable reminders.");
+      return;
+    }
+
+    if (reminderRef.current) clearInterval(reminderRef.current);
+
+    const unitMs = intervalUnit === "minutes" ? 60 * 1000 : intervalUnit === "hours" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const intervalMs = intervalValue * unitMs;
+
+    const [hours, minutes] = startTime.split(":").map(Number);
+    const firstReminder = new Date();
+    firstReminder.setHours(hours, minutes, 0, 0);
+
+    if (firstReminder < new Date()) {
+      firstReminder.setDate(firstReminder.getDate() + 1);
+    }
+
+    const delayMs = firstReminder - new Date();
+
+    setTimeout(() => {
+      new Notification("☀️ SunSmart Reminder", {
+        body: `UV is ${displayUV} (${uvMeta.level}) in ${location}. Time to reapply sunscreen!`,
+      });
+
+      reminderRef.current = setInterval(() => {
+        new Notification("☀️ SunSmart Reminder", {
+          body: `UV is ${displayUV} (${uvMeta.level}) in ${location}. Time to reapply sunscreen!`,
+        });
+      }, intervalMs);
+    }, delayMs);
+
+    setReminderEnabled(true);
+    alert(`Reminder set! First notification at ${startTime}, then every ${intervalValue} ${intervalUnit}.`);
+  };
+
+  const handleDisableReminder = () => {
+    if (reminderRef.current) {
+      clearInterval(reminderRef.current);
+      reminderRef.current = null;
+    }
+    setReminderEnabled(false);
+    alert("Reminder disabled.");
+  };
+
+  const [gpsLoading, setGpsLoading] = useState(false);
+
+  const handleGetGPS = () => {
+    if (!navigator.geolocation) {
+      alert("Your browser does not support GPS.");
+      return;
+    }
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude: lat, longitude: lng } = position.coords;
+        setLatitude(lat);
+        setLongitude(lng);
+        try {
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+          const geoData = await geoRes.json();
+          const suburb = geoData.address.suburb || geoData.address.city || geoData.address.town || geoData.address.state;
+          const state = geoData.address.state_code || geoData.address.state;
+          setLocation(`${suburb}, ${state}`);
+        } catch {
+          setLocation(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+        }
+        setGpsLoading(false);
+      },
+      (error) => {
+        alert("Could not get your location. Please allow location access.");
+        setGpsLoading(false);
+      }
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] text-slate-900">
@@ -282,7 +381,7 @@ export default function SunSmartUIMockup() {
                         <CloudSun className="h-5 w-5 text-white/90" />
                       </div>
                       <div className="flex items-end gap-3">
-                        <span className="text-7xl font-bold leading-none">{uvIndex}</span>
+                        <span className="text-7xl font-bold leading-none">{displayUV}</span>
                         <Badge className="mb-2 rounded-full border-0 bg-white/15 px-3 py-1 text-white shadow-none">
                           {uvMeta.level}
                         </Badge>
@@ -327,9 +426,9 @@ export default function SunSmartUIMockup() {
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">
-                    <MapPin className="mr-2 h-4 w-4" /> Use current GPS
-                  </Button>
+                <Button className="rounded-xl bg-slate-900 hover:bg-slate-800" onClick={handleGetGPS}>
+  <MapPin className="mr-2 h-4 w-4" /> {gpsLoading ? "Getting location..." : "Use current GPS"}
+</Button>
                   <Button variant="outline" className="rounded-xl bg-white/70">
                     <Share2 className="mr-2 h-4 w-4" /> Share alert
                   </Button>
@@ -408,15 +507,26 @@ export default function SunSmartUIMockup() {
                     </div>
                     <div className="space-y-2">
                       <Label>Reminder interval</Label>
-                      <select
-                        value={interval}
-                        onChange={(e) => setInterval(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-                      >
-                        <option>2 hours</option>
-                        <option>3 hours</option>
-                        <option>4 hours</option>
-                      </select>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={intervalValue}
+                          onChange={(e) => setIntervalValue(e.target.value)}
+                          className="rounded-xl w-24"
+                          placeholder="e.g. 2"
+                        />
+                        <select
+                          value={intervalUnit}
+                          onChange={(e) => setIntervalUnit(e.target.value)}
+                          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+                        >
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -424,11 +534,16 @@ export default function SunSmartUIMockup() {
                     <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">Enable reminder</Button>
+                    <Button
+                      className="rounded-xl bg-slate-900 hover:bg-slate-800"
+                      onClick={reminderEnabled ? handleDisableReminder : handleEnableReminder}
+                    >
+                      {reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
+                    </Button>
                     <Button variant="outline" className="rounded-xl bg-white">Preview notification</Button>
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                    Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every <span className="font-medium text-slate-900">{interval}</span>.
+                    Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every <span className="font-medium text-slate-900">{intervalValue} {intervalUnit}</span>.
                   </div>
                 </CardContent>
               </Card>
@@ -667,7 +782,7 @@ export default function SunSmartUIMockup() {
                 <CardContent className="space-y-4">
                   <div className="rounded-3xl bg-slate-950 p-5 text-white">
                     <p className="text-sm text-white/70">Preview caption</p>
-                    <p className="mt-3 text-lg font-semibold">Today's UV in {location} is {uvIndex} ({uvMeta.level}). Protect your skin and remind your friends to stay sun smart.</p>
+                    <p className="mt-3 text-lg font-semibold">Today's UV in {location} is {displayUV} ({uvMeta.level}). Protect your skin and remind your friends to stay sun smart.</p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
