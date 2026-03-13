@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Sun,
@@ -16,8 +16,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import {
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -25,6 +25,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,26 +35,66 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-const uvTrendData = [
-  { month: "Jan", uv: 11 },
-  { month: "Feb", uv: 10 },
-  { month: "Mar", uv: 8 },
-  { month: "Apr", uv: 6 },
-  { month: "May", uv: 4 },
-  { month: "Jun", uv: 3 },
-  { month: "Jul", uv: 4 },
-  { month: "Aug", uv: 5 },
-  { month: "Sep", uv: 7 },
-  { month: "Oct", uv: 9 },
-  { month: "Nov", uv: 10 },
-  { month: "Dec", uv: 11 },
+const melanomaTrendData = [
+  { year: 1982, Females: 593, Males: 405, Persons: 998 },
+  { year: 1983, Females: 671, Males: 415, Persons: 1086 },
+  { year: 1984, Females: 633, Males: 426, Persons: 1059 },
+  { year: 1985, Females: 738, Males: 495, Persons: 1233 },
+  { year: 1986, Females: 700, Males: 545, Persons: 1245 },
+  { year: 1987, Females: 820, Males: 679, Persons: 1499 },
+  { year: 1988, Females: 823, Males: 726, Persons: 1549 },
+  { year: 1989, Females: 724, Males: 598, Persons: 1322 },
+  { year: 1990, Females: 691, Males: 593, Persons: 1284 },
+  { year: 1991, Females: 736, Males: 608, Persons: 1344 },
+  { year: 1992, Females: 729, Males: 617, Persons: 1346 },
+  { year: 1993, Females: 720, Males: 603, Persons: 1323 },
+  { year: 1994, Females: 711, Males: 655, Persons: 1366 },
+  { year: 1995, Females: 882, Males: 678, Persons: 1560 },
+  { year: 1996, Females: 848, Males: 664, Persons: 1512 },
+  { year: 1997, Females: 882, Males: 699, Persons: 1581 },
+  { year: 1998, Females: 787, Males: 602, Persons: 1389 },
+  { year: 1999, Females: 789, Males: 655, Persons: 1444 },
+  { year: 2000, Females: 802, Males: 631, Persons: 1433 },
+  { year: 2001, Females: 761, Males: 631, Persons: 1392 },
+  { year: 2002, Females: 754, Males: 629, Persons: 1383 },
+  { year: 2003, Females: 721, Males: 598, Persons: 1319 },
+  { year: 2004, Females: 715, Males: 627, Persons: 1342 },
+  { year: 2005, Females: 770, Males: 611, Persons: 1381 },
+  { year: 2006, Females: 704, Males: 596, Persons: 1300 },
+  { year: 2007, Females: 692, Males: 506, Persons: 1198 },
+  { year: 2008, Females: 688, Males: 563, Persons: 1251 },
+  { year: 2009, Females: 661, Males: 580, Persons: 1241 },
+  { year: 2010, Females: 621, Males: 521, Persons: 1142 },
+  { year: 2011, Females: 606, Males: 496, Persons: 1102 },
+  { year: 2012, Females: 642, Males: 521, Persons: 1163 },
+  { year: 2013, Females: 655, Males: 498, Persons: 1153 },
+  { year: 2014, Females: 602, Males: 488, Persons: 1090 },
+  { year: 2015, Females: 640, Males: 460, Persons: 1100 },
+  { year: 2016, Females: 723, Males: 517, Persons: 1240 },
+  { year: 2017, Females: 647, Males: 525, Persons: 1172 },
+  { year: 2018, Females: 697, Males: 507, Persons: 1204 },
+  { year: 2019, Females: 689, Males: 539, Persons: 1228 },
 ];
 
-const riskData = [
-  { label: "Low", value: 15 },
-  { label: "Moderate", value: 28 },
-  { label: "High", value: 39 },
-  { label: "Extreme", value: 18 },
+const generationalSafetyData = [
+  {
+    label: "15-24 years (Gen Z)",
+    suntan: 20.6,
+    sunburn: 15.2,
+    sunscreen: 38.9,
+  },
+  {
+    label: "35-44 years (Millennials)",
+    suntan: 8.1,
+    sunburn: 8.0,
+    sunscreen: 45.5,
+  },
+  {
+    label: "65+ years (Boomers)",
+    suntan: 3.3,
+    sunburn: 2.0,
+    sunscreen: 27.4,
+  },
 ];
 
 const mythFacts = [
@@ -140,6 +181,10 @@ const sunscreenByRisk = {
   Extreme: "Apply SPF 50+ generously, reapply carefully, and combine with clothing and shade.",
 };
 
+const DEMO_USER_ID = "demo-user";
+const DEMO_USER_NAME = "SunSmart Demo User";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+
 function getUvMeta(uv) {
   if (uv <= 2) {
     return {
@@ -185,6 +230,52 @@ function StatPill({ icon: Icon, label, value }) {
   );
 }
 
+function AwarenessTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur">
+      <p className="mb-3 text-sm font-semibold text-slate-900">{label}</p>
+      <div className="space-y-2 text-sm">
+        {payload.map((entry) => (
+          <div key={entry.dataKey} className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-slate-600">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span>{entry.name}</span>
+            </div>
+            <span className="font-semibold text-slate-900">{entry.value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MelanomaTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur">
+      <p className="mb-3 text-sm font-semibold text-slate-900">Year: {label}</p>
+      <div className="space-y-2 text-sm">
+        {payload.map((entry) => (
+          <div key={entry.dataKey} className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-slate-600">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span>{entry.name}</span>
+            </div>
+            <span className="font-semibold text-slate-900">{entry.value?.toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SunSmartUIMockup() {
   const [selectedTab, setSelectedTab] = useState("dashboard");
   const [uvIndex, setUvIndex] = useState(9);
@@ -193,10 +284,106 @@ export default function SunSmartUIMockup() {
   const [email, setEmail] = useState("student@monash.edu");
   const [startTime, setStartTime] = useState("09:00");
   const [interval, setInterval] = useState("2 hours");
+  const [settingsStatus, setSettingsStatus] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [databaseState, setDatabaseState] = useState("");
+  const [emailState, setEmailState] = useState("");
+  const [isSendingPreview, setIsSendingPreview] = useState(false);
 
   const uvMeta = useMemo(() => getUvMeta(uvIndex), [uvIndex]);
   const clothingTips = clothingByRisk[uvMeta.level];
   const sunscreenTip = sunscreenByRisk[uvMeta.level];
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/${DEMO_USER_ID}`);
+
+        if (!response.ok) {
+          throw new Error("Unable to load saved settings");
+        }
+
+        const saved = await response.json();
+        const matchedSkinTone = skinToneOptions.find((option) => option.id === saved.skinTone) ?? skinToneOptions[1];
+
+        setLocation(saved.location);
+        setEmail(saved.email);
+        setStartTime(saved.startTime);
+        setInterval(saved.interval);
+        setSkinTone(matchedSkinTone);
+        setSettingsStatus("Loaded from the SunSmart SQLite database");
+        setDatabaseState("Connected to API and SQLite");
+        setEmailState("Email notifications are available when the backend is configured");
+      } catch (error) {
+        setSettingsStatus("");
+        setDatabaseState("");
+        setEmailState("");
+      }
+    }
+
+    loadSettings();
+  }, []);
+
+  async function handleSaveSettings() {
+    setIsSaving(true);
+    setSettingsStatus("Saving settings to the database...");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/settings/${DEMO_USER_ID}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          name: DEMO_USER_NAME,
+          location,
+          skinTone: skinTone.id,
+          startTime,
+          interval,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to save settings");
+      }
+
+      const saved = await response.json();
+      const matchedSkinTone = skinToneOptions.find((option) => option.id === saved.skinTone) ?? skinTone;
+
+      setSkinTone(matchedSkinTone);
+      setSettingsStatus(`Saved for ${saved.email} in USER and USER_SETTINGS`);
+      setDatabaseState("Connected to API and SQLite");
+    } catch (error) {
+      setSettingsStatus("Save failed. Start the backend with `npm run server` and try again.");
+      setDatabaseState("");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handlePreviewNotification() {
+    setIsSendingPreview(true);
+    setEmailState("Sending preview email...");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/notifications/${DEMO_USER_ID}/preview`, {
+        method: "POST",
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to send preview email");
+      }
+
+      setEmailState(`Preview email sent to ${email}`);
+    } catch (error) {
+      setEmailState(error.message);
+    } finally {
+      setIsSendingPreview(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] text-slate-900">
@@ -424,12 +611,35 @@ export default function SunSmartUIMockup() {
                     <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">Enable reminder</Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Preview notification</Button>
+                    <Button
+                      className="rounded-xl bg-slate-900 hover:bg-slate-800"
+                      onClick={handleSaveSettings}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? "Saving..." : "Save reminder settings"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="rounded-xl bg-white"
+                      onClick={handlePreviewNotification}
+                      disabled={isSendingPreview}
+                    >
+                      {isSendingPreview ? "Sending..." : "Preview notification"}
+                    </Button>
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
                     Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every <span className="font-medium text-slate-900">{interval}</span>.
                   </div>
+                  {settingsStatus ? (
+                    <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">
+                      {settingsStatus}
+                    </div>
+                  ) : null}
+                  {emailState ? (
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
+                      {emailState}
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             </div>
@@ -439,52 +649,79 @@ export default function SunSmartUIMockup() {
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
-                  <CardTitle>Australia UV trends</CardTitle>
+                  <CardTitle>Young adults (15-39): melanoma new cases over time</CardTitle>
                   <CardDescription>
-                    Interactive chart space for Epic 2: awareness visuals with hover-friendly explanations.
+                    Actual observed melanoma cases from 1982 to 2019, grouped by sex for an interactive trend view.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[320px] w-full text-slate-700">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={uvTrendData}>
-                        <defs>
-                          <linearGradient id="uvFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="currentColor" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="currentColor" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
+                      <LineChart data={melanomaTrendData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} domain={[0, 12]} />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="uv" stroke="currentColor" fill="url(#uvFill)" strokeWidth={3} />
-                      </AreaChart>
+                        <XAxis dataKey="year" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <Tooltip content={<MelanomaTooltip />} />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="Females"
+                          stroke="#ec4899"
+                          strokeWidth={3}
+                          dot={{ r: 3, strokeWidth: 0 }}
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="Males"
+                          stroke="#2563eb"
+                          strokeWidth={3}
+                          dot={{ r: 3, strokeWidth: 0 }}
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="Persons"
+                          stroke="#f59e0b"
+                          strokeWidth={3}
+                          dot={{ r: 3, strokeWidth: 0 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                   <p className="mt-4 text-sm leading-6 text-slate-600">
-                    The chart area gives your team a polished placeholder for local or national UV data while already meeting the visual interaction expectation in the acceptance criteria.
+                    Among young adults aged 15-39, melanoma cases increased strongly from the early 1980s, reached their highest levels in the 1990s, and then trended downward over the following decades. Females generally recorded higher case numbers than males throughout the period, while total cases have remained relatively stable in recent years. Overall, the chart indicates some long-term improvement, though melanoma continues to affect a substantial number of young adults.
                   </p>
                 </CardContent>
               </Card>
 
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
-                  <CardTitle>Risk awareness snapshot</CardTitle>
-                  <CardDescription>Simple, social-friendly graphics are easier to understand and easier to share.</CardDescription>
+                  <CardTitle>The generational shift in sun-safety attitudes</CardTitle>
+                  <CardDescription>
+                    Compare suntanning, sunburn, and sunscreen behaviour across age groups with hover details.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[320px] w-full text-slate-700">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={riskData}>
+                      <BarChart data={generationalSafetyData} barGap={10} barCategoryGap="18%">
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="value" radius={[10, 10, 0, 0]} />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} />
+                        <YAxis tickLine={false} axisLine={false} domain={[0, 50]} />
+                        <Tooltip content={<AwarenessTooltip />} cursor={{ fill: "rgba(15, 23, 42, 0.04)" }} />
+                        <Legend />
+                        <Bar name="Attempted to Suntan (%)" dataKey="suntan" fill="#F97316" radius={[10, 10, 0, 0]} />
+                        <Bar name="Experienced Sunburn (%)" dataKey="sunburn" fill="#E11D48" radius={[10, 10, 0, 0]} />
+                        <Bar name="Used Sunscreen regularly (%)" dataKey="sunscreen" fill="#2563EB" radius={[10, 10, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
+                  <p className="mt-4 text-sm leading-6 text-slate-600">
+                    ABS survey data from 2023 to 2024 shows stronger sunscreen use among millennials, while Gen Z reports
+                    the highest suntanning and sunburn rates.
+                  </p>
                   <div className="mt-4 flex flex-wrap gap-3">
                     <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">
                       <Share2 className="mr-2 h-4 w-4" /> Share visual
