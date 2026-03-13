@@ -1,7 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
-import { useUVData } from "./useUVData";
+import React, { useMemo, useState, useRef } from "react";
 import { motion } from "framer-motion";
-
 import {
   Sun,
   MapPin,
@@ -175,6 +173,30 @@ function getUvMeta(uv) {
   };
 }
 
+// Helper: send a browser notification
+function sendNotification(title, body) {
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, icon: "/favicon.ico" });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((permission) => {
+      if (permission === "granted") {
+        new Notification(title, { body, icon: "/favicon.ico" });
+      }
+    });
+  }
+}
+
+// Helper: check UV and fire alert if high
+function maybeAlertUV(uv, locationName) {
+  if (uv >= 6) {
+    const level = uv <= 7 ? "High" : "Extreme";
+    sendNotification(
+      "⚠️ SunSmart UV Alert",
+      `UV index is ${uv} (${level}) at ${locationName}. Please protect your skin!`
+    );
+  }
+}
+
 function StatPill({ icon: Icon, label, value }) {
   return (
     <div className="rounded-2xl border border-white/60 bg-white/70 p-4 backdrop-blur">
@@ -189,113 +211,173 @@ function StatPill({ icon: Icon, label, value }) {
 
 export default function SunSmartUIMockup() {
   const [selectedTab, setSelectedTab] = useState("dashboard");
-  const [uvIndex, setUvIndex] = useState(9);
-  const [location, setLocation] = useState("Melbourne, VIC");
-  const [latitude, setLatitude] = useState(-37.8136);
-const [longitude, setLongitude] = useState(144.9631);
-  const { uvIndex: realUV, loading: uvLoading } = useUVData(latitude, longitude);
-  const displayUV = realUV ?? uvIndex;
-
+  const [uvIndex, setUvIndex] = useState(0);
+  const [location, setLocation] = useState("Detecting...");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [skinTone, setSkinTone] = useState(skinToneOptions[1]);
   const [email, setEmail] = useState("student@monash.edu");
   const [startTime, setStartTime] = useState("09:00");
   const [interval, setInterval] = useState("2 hours");
-  const [intervalValue, setIntervalValue] = useState(2);
-  const [intervalUnit, setIntervalUnit] = useState("hours");
-  const [reminderEnabled, setReminderEnabled] = useState(false);
-  const reminderRef = React.useRef(null);
-  const alertedRef = React.useRef(false);
 
-  const uvMeta = useMemo(() => getUvMeta(displayUV), [displayUV]);
+  // ── Sunscreen reminder state ──────────────────────────────────────
+  const [reminderActive, setReminderActive] = useState(false);
+  const [reminderStatus, setReminderStatus] = useState(""); // feedback text
+  const reminderTimerRef = useRef(null);
+
+  // Convert interval string to milliseconds
+  function intervalToMs(intervalStr) {
+    if (intervalStr === "10 seconds") return 10 * 1000;
+    if (intervalStr === "30 seconds") return 30 * 1000;
+    if (intervalStr === "1 minute") return 60 * 1000;
+    if (intervalStr === "2 minutes") return 2 * 60 * 1000;
+    if (intervalStr === "5 minutes") return 5 * 60 * 1000;
+    if (intervalStr === "2 hours") return 2 * 60 * 60 * 1000;
+    if (intervalStr === "3 hours") return 3 * 60 * 60 * 1000;
+    if (intervalStr === "4 hours") return 4 * 60 * 60 * 1000;
+    return 2 * 60 * 60 * 1000;
+  }
+
+  // Enable repeating sunscreen reminder
+  function enableReminder() {
+    // Clear any existing timer first
+    if (reminderTimerRef.current) {
+      clearInterval(reminderTimerRef.current);
+    }
+
+    // 计算距离设定时间还有多少毫秒
+const now = new Date();
+const [hours, minutes] = startTime.split(":").map(Number);
+const target = new Date();
+target.setHours(hours, minutes, 0, 0);
+
+// 如果设定时间已经过了，改成明天
+if (target <= now) {
+  target.setDate(target.getDate() + 1);
+}
+
+const delay = target - now;
+
+// 等到设定时间才发第一条
+setTimeout(() => {
+  sendNotification(
+    "🧴 SunSmart Sunscreen Reminder",
+    `Time to apply sunscreen! UV is ${uvIndex} (${getUvMeta(uvIndex).level}) at ${location}.`
+  );
+  // 然后每隔interval重复
+  reminderTimerRef.current = setInterval(() => {
+    sendNotification(
+      "🧴 SunSmart Sunscreen Reminder",
+      `Time to reapply your sunscreen! UV is currently ${uvIndex} (${getUvMeta(uvIndex).level}) at ${location}.`
+    );
+  }, intervalToMs(interval));
+}, delay);
+
+    // Set up repeating reminder
+    const ms = intervalToMs(interval);
+    
+
+    setReminderActive(true);
+    setReminderStatus(`✅ Reminder enabled — you'll be notified every ${interval}.`);
+  }
+
+  // Disable reminder
+  function disableReminder() {
+    if (reminderTimerRef.current) {
+      clearInterval(reminderTimerRef.current);
+      reminderTimerRef.current = null;
+    }
+    setReminderActive(false);
+    setReminderStatus("🔕 Reminder disabled.");
+  }
+
+  // Preview notification (fires one immediately)
+  function previewNotification() {
+    sendNotification(
+      "🧴 SunSmart Sunscreen Reminder",
+      `This is a preview! You'll be reminded every ${interval} starting at ${startTime}.`
+    );
+    setReminderStatus("📣 Preview sent — check your notifications.");
+  }
+  // ─────────────────────────────────────────────────────────────────
+
+  const fetchUVByLocation = async () => {
+    setLoading(true);
+    try {
+      const position = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject)
+      );
+      const { latitude, longitude } = position.coords;
+
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+      );
+      const geoData = await geoRes.json();
+      const suburb = geoData.address.suburb || geoData.address.neighbourhood || geoData.address.quarter || "";
+      const city = geoData.address.city || geoData.address.town || geoData.address.village || "";
+      const state = geoData.address.state || "";
+      const displayLocation = suburb ? `${suburb}, ${city}` : `${city}, ${state}`;
+      setLocation(displayLocation);
+
+      const uvRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=uv_index`
+      );
+      const uvData = await uvRes.json();
+      const uv = Math.round(uvData.current.uv_index);
+      setUvIndex(uv);
+
+      // 🔔 Fire UV alert notification if UV is high
+      maybeAlertUV(uv, displayLocation);
+
+    } catch (err) {
+      alert("Unable to get location. Please allow location access.");
+    } finally {
+      setLoading(false);
+      setInitialLoading(false);
+    }
+  };
+
+  const searchUVByName = async () => {
+    if (!searchQuery.trim()) return;
+    setLoading(true);
+    try {
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1`
+      );
+      const geoData = await geoRes.json();
+      if (!geoData.length) {
+        alert("Location not found. Please try another name.");
+        return;
+      }
+      const { lat, lon, display_name } = geoData[0];
+      const searchLocation = display_name.split(",").slice(0, 2).join(",");
+      setLocation(searchLocation);
+
+      const uvRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=uv_index`
+      );
+      const uvData = await uvRes.json();
+      const uv = Math.round(uvData.current.uv_index);
+      setUvIndex(uv);
+
+      // 🔔 Fire UV alert notification if UV is high
+      maybeAlertUV(uv, searchLocation);
+
+    } catch (err) {
+      alert("Search failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchUVByLocation();
+  }, []);
+
+  const uvMeta = useMemo(() => getUvMeta(uvIndex), [uvIndex]);
   const clothingTips = clothingByRisk[uvMeta.level];
   const sunscreenTip = sunscreenByRisk[uvMeta.level];
-
-  useEffect(() => {
-    if (displayUV >= 3 && !alertedRef.current) {
-      alertedRef.current = true;
-      new Notification("⚠️ UV Alert - SunSmart", {
-        body: `UV index is now ${displayUV} (${uvMeta.level}) in ${location}. Apply sunscreen before going outside!`,
-      });
-    }
-  }, [displayUV]);
-
-  const handleEnableReminder = async () => {
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") {
-      alert("Please allow notifications to enable reminders.");
-      return;
-    }
-
-    if (reminderRef.current) clearInterval(reminderRef.current);
-
-    const unitMs = intervalUnit === "minutes" ? 60 * 1000 : intervalUnit === "hours" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-    const intervalMs = intervalValue * unitMs;
-
-    const [hours, minutes] = startTime.split(":").map(Number);
-    const firstReminder = new Date();
-    firstReminder.setHours(hours, minutes, 0, 0);
-
-    if (firstReminder < new Date()) {
-      firstReminder.setDate(firstReminder.getDate() + 1);
-    }
-
-    const delayMs = firstReminder - new Date();
-
-    setTimeout(() => {
-      new Notification("☀️ SunSmart Reminder", {
-        body: `UV is ${displayUV} (${uvMeta.level}) in ${location}. Time to reapply sunscreen!`,
-      });
-
-      reminderRef.current = setInterval(() => {
-        new Notification("☀️ SunSmart Reminder", {
-          body: `UV is ${displayUV} (${uvMeta.level}) in ${location}. Time to reapply sunscreen!`,
-        });
-      }, intervalMs);
-    }, delayMs);
-
-    setReminderEnabled(true);
-    alert(`Reminder set! First notification at ${startTime}, then every ${intervalValue} ${intervalUnit}.`);
-  };
-
-  const handleDisableReminder = () => {
-    if (reminderRef.current) {
-      clearInterval(reminderRef.current);
-      reminderRef.current = null;
-    }
-    setReminderEnabled(false);
-    alert("Reminder disabled.");
-  };
-
-  const [gpsLoading, setGpsLoading] = useState(false);
-
-  const handleGetGPS = () => {
-    if (!navigator.geolocation) {
-      alert("Your browser does not support GPS.");
-      return;
-    }
-    setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude: lat, longitude: lng } = position.coords;
-        setLatitude(lat);
-        setLongitude(lng);
-        try {
-          const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
-          const geoData = await geoRes.json();
-          const suburb = geoData.address.suburb || geoData.address.city || geoData.address.town || geoData.address.state;
-          const state = geoData.address.state_code || geoData.address.state;
-          setLocation(`${suburb}, ${state}`);
-        } catch {
-          setLocation(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
-        }
-        setGpsLoading(false);
-      },
-      (error) => {
-        alert("Could not get your location. Please allow location access.");
-        setGpsLoading(false);
-      }
-    );
-  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] text-slate-900">
@@ -381,7 +463,7 @@ const [longitude, setLongitude] = useState(144.9631);
                         <CloudSun className="h-5 w-5 text-white/90" />
                       </div>
                       <div className="flex items-end gap-3">
-                        <span className="text-7xl font-bold leading-none">{displayUV}</span>
+                        <span className="text-7xl font-bold leading-none">{uvIndex}</span>
                         <Badge className="mb-2 rounded-full border-0 bg-white/15 px-3 py-1 text-white shadow-none">
                           {uvMeta.level}
                         </Badge>
@@ -406,37 +488,50 @@ const [longitude, setLongitude] = useState(144.9631);
                 </CardTitle>
                 <CardDescription>Use these inputs to demo the UI and test connected features later.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-5">
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Demo location</Label>
-                  <Input value={location} onChange={(e) => setLocation(e.target.value)} className="rounded-xl bg-white" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>UV index</Label>
-                    <span className="text-sm text-slate-500">1–11+</span>
+                  <Label>Current location</Label>
+                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                    <span>{location || "Not detected yet"}</span>
                   </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={11}
-                    value={uvIndex}
-                    onChange={(e) => setUvIndex(Number(e.target.value))}
-                    className="w-full"
-                  />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                <Button className="rounded-xl bg-slate-900 hover:bg-slate-800" onClick={handleGetGPS}>
-  <MapPin className="mr-2 h-4 w-4" /> {gpsLoading ? "Getting location..." : "Use current GPS"}
-</Button>
-                  <Button variant="outline" className="rounded-xl bg-white/70">
-                    <Share2 className="mr-2 h-4 w-4" /> Share alert
-                  </Button>
+
+                <div className="space-y-2">
+                  <Label>Search any location</Label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && searchUVByName()}
+                        placeholder="Search suburb, city or landmark..."
+                        className="rounded-xl bg-white pl-9"
+                      />
+                    </div>
+                    <Button
+                      onClick={searchUVByName}
+                      disabled={loading}
+                      className="rounded-xl bg-slate-900 hover:bg-slate-800"
+                    >
+                      {loading ? "..." : "Search"}
+                    </Button>
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
-                  This design keeps the primary alert above the fold, then uses modular sections for awareness, skin tone,
-                  sunscreen, clothing, and reminder tasks.
-                </div>
+
+                <Button
+                  className="w-full rounded-xl bg-slate-900 hover:bg-slate-800"
+                  onClick={fetchUVByLocation}
+                  disabled={loading}
+                >
+                  <MapPin className="mr-2 h-4 w-4" />
+                  {loading ? "Fetching..." : "Use current GPS"}
+                </Button>
+
+                <Button variant="outline" className="w-full rounded-xl bg-white/70">
+                  <Share2 className="mr-2 h-4 w-4" /> Share alert
+                </Button>
               </CardContent>
             </Card>
           </motion.div>
@@ -490,60 +585,87 @@ const [longitude, setLongitude] = useState(144.9631);
                 </CardContent>
               </Card>
 
+              {/* ── Sunscreen reminder card (now fully functional) ── */}
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Bell className="h-5 w-5" /> Sunscreen reminder
                   </CardTitle>
                   <CardDescription>
-                    Designed as a clean settings card so your teammate can connect email, SMS, or push logic later.
+                    Set a time and interval — the app will send you a browser notification to reapply sunscreen.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Initial application time</Label>
-                      <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="rounded-xl" />
+                      <Input
+                        type="time"
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                        className="rounded-xl"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Reminder interval</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={intervalValue}
-                          onChange={(e) => setIntervalValue(e.target.value)}
-                          className="rounded-xl w-24"
-                          placeholder="e.g. 2"
-                        />
-                        <select
-                          value={intervalUnit}
-                          onChange={(e) => setIntervalUnit(e.target.value)}
-                          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
-                        >
-                          <option value="minutes">Minutes</option>
-                          <option value="hours">Hours</option>
-                          <option value="days">Days</option>
-                        </select>
-                      </div>
+                      <select
+  value={interval}
+  onChange={(e) => setInterval(e.target.value)}
+  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+>
+  <option>10 seconds</option>
+  <option>30 seconds</option>
+  <option>1 minute</option>
+  <option>2 minutes</option>
+  <option>5 minutes</option>
+  <option>2 hours</option>
+  <option>3 hours</option>
+  <option>4 hours</option>
+</select>
                     </div>
                   </div>
+
                   <div className="space-y-2">
                     <Label>Email destination</Label>
                     <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
                   </div>
+
                   <div className="flex flex-wrap gap-3">
+                    {reminderActive ? (
+                      <Button
+                        onClick={disableReminder}
+                        className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
+                      >
+                        Disable reminder
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={enableReminder}
+                        className="rounded-xl bg-slate-900 hover:bg-slate-800"
+                      >
+                        Enable reminder
+                      </Button>
+                    )}
                     <Button
-                      className="rounded-xl bg-slate-900 hover:bg-slate-800"
-                      onClick={reminderEnabled ? handleDisableReminder : handleEnableReminder}
+                      variant="outline"
+                      className="rounded-xl bg-white"
+                      onClick={previewNotification}
                     >
-                      {reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
+                      Preview notification
                     </Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Preview notification</Button>
                   </div>
+
+                  {/* Status feedback */}
+                  {reminderStatus && (
+                    <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-sm text-slate-700">
+                      {reminderStatus}
+                    </div>
+                  )}
+
                   <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                    Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every <span className="font-medium text-slate-900">{intervalValue} {intervalUnit}</span>.
+                    Next reminder preview:{" "}
+                    <span className="font-medium text-slate-900">{startTime}</span> → every{" "}
+                    <span className="font-medium text-slate-900">{interval}</span>.
                   </div>
                 </CardContent>
               </Card>
@@ -782,7 +904,7 @@ const [longitude, setLongitude] = useState(144.9631);
                 <CardContent className="space-y-4">
                   <div className="rounded-3xl bg-slate-950 p-5 text-white">
                     <p className="text-sm text-white/70">Preview caption</p>
-                    <p className="mt-3 text-lg font-semibold">Today's UV in {location} is {displayUV} ({uvMeta.level}). Protect your skin and remind your friends to stay sun smart.</p>
+                    <p className="mt-3 text-lg font-semibold">Today's UV in {location} is {uvIndex} ({uvMeta.level}). Protect your skin and remind your friends to stay sun smart.</p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
