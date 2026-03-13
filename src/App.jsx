@@ -213,6 +213,47 @@ export default function SunSmartUIMockup() {
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const reminderRef = React.useRef(null);
   const alertedRef = React.useRef(false);
+  const [notifPermission, setNotifPermission] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+
+  // Fire notification directly — no Service Worker dependency
+  const fireWithSW = (title, body) => {
+    try {
+      const n = new Notification(title, {
+        body,
+        icon: "/favicon.ico",
+        tag: "sunsmart-reminder",
+        renotify: true,
+      });
+      n.onerror = (e) => console.error("Notification error:", e);
+    } catch (e) {
+      console.error("Notification failed:", e);
+    }
+  };
+
+  // Firefox-compatible permission request
+  // Firefox won't show the prompt if requestPermission is called inside async/await
+  // It needs to be called as a direct .then() chain tied to the user gesture
+  const requestNotifPermission = () => {
+    return new Promise((resolve) => {
+      if (!("Notification" in window)) { resolve("unsupported"); return; }
+      if (Notification.permission !== "default") { resolve(Notification.permission); return; }
+      // Use callback form for Firefox compatibility, Promise form for Chrome
+      try {
+        Notification.requestPermission().then((p) => {
+          setNotifPermission(p);
+          resolve(p);
+        });
+      } catch {
+        // Old callback-based API (some older Firefox)
+        Notification.requestPermission((p) => {
+          setNotifPermission(p);
+          resolve(p);
+        });
+      }
+    });
+  };
 
   const uvMeta = useMemo(() => getUvMeta(displayUV), [displayUV]);
   const clothingTips = clothingByRisk[uvMeta.level];
@@ -229,30 +270,65 @@ export default function SunSmartUIMockup() {
   }, [displayUV]);
 
   const handleEnableReminder = async () => {
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") {
-      alert("Please allow notifications to enable reminders.");
+    // Step 1: Check if notifications are supported
+    if (!("Notification" in window)) {
+      alert("Your browser does not support notifications. Try Chrome or Edge.");
       return;
     }
 
-    if (reminderRef.current) clearInterval(reminderRef.current);
+    // Step 2: Handle permission
+    let permission = Notification.permission;
+    if (permission === "denied") {
+      alert(
+        "Notifications are BLOCKED for this site in Chrome.\n\n" +
+        "To fix this:\n" +
+        "1. Click the 🔒 lock icon in the address bar (left of localhost:5173)\n" +
+        "2. Click 'Site settings'\n" +
+        "3. Find 'Notifications' → change to 'Allow'\n" +
+        "4. Come back and refresh the page (Ctrl+R)\n" +
+        "5. Click 'Enable reminder' again\n\n" +
+        "OR: In Chrome, go to Settings → Privacy → Site Settings → Notifications → find localhost and set to Allow."
+      );
+      return;
+    }
+    if (permission !== "granted") {
+      permission = await requestNotifPermission();
+    }
+    setNotifPermission(permission);
+    if (permission !== "granted") {
+      alert("Notification permission was not granted. Please allow notifications and try again.");
+      return;
+    }
 
-    const unitMs = intervalUnit === "minutes" ? 60 * 1000 : intervalUnit === "hours" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-    const intervalMs = intervalValue * unitMs;
+    // Step 3: Clear any existing reminder
+    if (reminderRef.current) {
+      clearInterval(reminderRef.current);
+      reminderRef.current = null;
+    }
 
+    // Step 4: Calculate interval in ms (ensure Number)
+    const val = Number(intervalValue) || 1;
+    const unitMs = intervalUnit === "minutes" ? 60 * 1000
+      : intervalUnit === "hours" ? 60 * 60 * 1000
+      : 24 * 60 * 60 * 1000;
+    const intervalMs = val * unitMs;
+
+    // Step 5: Calculate delay to first reminder
     const [hours, minutes] = startTime.split(":").map(Number);
     const firstReminder = new Date();
     firstReminder.setHours(hours, minutes, 0, 0);
+    const delayMs = firstReminder > new Date() ? firstReminder - new Date() : 0;
 
-    const now = new Date();
-    // If the chosen time is in the past (or within 10s), fire the first one immediately
-    const delayMs = firstReminder > now ? firstReminder - now : 0;
+    // Step 6: Capture current values in closure so they don't go stale
+    const snapUV = displayUV;
+    const snapLevel = uvMeta.level;
+    const snapLocation = searchedLocation;
 
     const fireNotification = () => {
-      new Notification("☀️ SunSmart Reminder", {
-        body: `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. Time to reapply sunscreen!`,
-        icon: "/favicon.ico",
-      });
+      fireWithSW(
+        "☀️ SunSmart Reminder",
+        `UV is ${snapUV} (${snapLevel}) in ${snapLocation}. Time to reapply sunscreen!`
+      );
     };
 
     if (delayMs === 0) {
@@ -266,8 +342,12 @@ export default function SunSmartUIMockup() {
     }
 
     setReminderEnabled(true);
-    const fireTimeStr = delayMs === 0 ? "now" : startTime;
-    alert(`Reminder set! First notification ${fireTimeStr === "now" ? "firing now" : "at " + startTime}, then every ${intervalValue} ${intervalUnit}.`);
+    alert(
+      `✅ Reminder set!\n\n` +
+      `First notification: ${delayMs === 0 ? "right now" : startTime}\n` +
+      `Then every: ${val} ${intervalUnit}\n\n` +
+      `Keep this browser tab open for reminders to fire.`
+    );
   };
 
   const handleDisableReminder = () => {
@@ -552,7 +632,7 @@ export default function SunSmartUIMockup() {
                   </Badge>
                 </div>
                 <p className="text-sm text-slate-500">
-                  We help you enjoy the sun risk-free.
+                  A calm, mobile-first dashboard for UV alerts, awareness, and daily protection planning.
                 </p>
               </div>
             </div>
@@ -595,7 +675,8 @@ export default function SunSmartUIMockup() {
                       Real-time UV guidance that feels simple, clear, and actually useful.
                     </h2>
                     <p className="mt-4 max-w-2xl text-slate-600">
-                      This section helps you determine the risk level and the appropriate measures you need to take according to the UV Index of a location.
+                      The landing experience is built around the core story requirement: current location, current UV index,
+                      risk messaging, and immediate protection suggestions in one glance.
                     </p>
 
                     <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -642,7 +723,7 @@ export default function SunSmartUIMockup() {
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Sparkles className="h-5 w-5" /> Quick controls
                 </CardTitle>
-                <CardDescription>Use the "Current location" option or the "Search any location" option below.</CardDescription>
+                <CardDescription>Use these inputs to demo the UI and test connected features later.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="space-y-2">
@@ -700,8 +781,8 @@ export default function SunSmartUIMockup() {
                   <MapPin className="mr-2 h-4 w-4" /> {gpsLoading ? "Detecting location..." : "Use current GPS"}
                 </Button>
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
-                  You can make use of the "Current location" option to use your current location for the UV index checker. You can also select an address from the "Search any location" option
-                  for checking the UV Index of a different place.
+                  This design keeps the primary alert above the fold, then uses modular sections for awareness, skin tone,
+                  sunscreen, clothing, and reminder tasks.
                 </div>
               </CardContent>
             </Card>
@@ -719,7 +800,7 @@ export default function SunSmartUIMockup() {
                     <TriangleAlert className="h-5 w-5" /> UV alert and response
                   </CardTitle>
                   <CardDescription>
-                    {/* sample text for the UV alert and response card */}
+                    Supports the acceptance criteria for colour-coded UV alerts, warning text, and suggested measures.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -762,7 +843,7 @@ export default function SunSmartUIMockup() {
                     <Bell className="h-5 w-5" /> Sunscreen reminder
                   </CardTitle>
                   <CardDescription>
-                    You can choose to opt for a application reminder which will enable us to help you remember your suncreen application!
+                    Designed as a clean settings card so your teammate can connect email, SMS, or push logic later.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -779,7 +860,7 @@ export default function SunSmartUIMockup() {
                           min={1}
                           max={99}
                           value={intervalValue}
-                          onChange={(e) => setIntervalValue(e.target.value)}
+                          onChange={(e) => setIntervalValue(Number(e.target.value))}
                           className="rounded-xl w-24"
                           placeholder="e.g. 2"
                         />
@@ -799,6 +880,50 @@ export default function SunSmartUIMockup() {
                     <Label>Email destination</Label>
                     <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
                   </div>
+                  <div className="rounded-xl border p-3 text-xs space-y-2 mb-1
+                    {notifPermission === 'granted' ? 'border-emerald-200 bg-emerald-50' : notifPermission === 'denied' ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}
+                  ">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-600">Notification permission:</span>
+                        {notifPermission === "granted" && <span className="rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 font-semibold">✓ Allowed</span>}
+                        {notifPermission === "denied" && <span className="rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 font-semibold">✗ Blocked</span>}
+                        {notifPermission === "default" && <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 font-semibold">⚠ Not yet granted</span>}
+                      </div>
+                      {notifPermission !== "granted" && (
+                        <button
+                          className="text-xs underline text-slate-500 hover:text-slate-800"
+                          onClick={async () => {
+                            if (notifPermission === "denied") {
+                              alert(
+                                "Chrome has blocked notifications for this site.\n\n" +
+                                "Steps to fix:\n" +
+                                "1. Click the 🔒 lock icon in the address bar\n" +
+                                "2. Click Site settings\n" +
+                                "3. Set Notifications → Allow\n" +
+                                "4. Refresh this page (Ctrl+R)\n" +
+                                "5. Try enabling the reminder again"
+                              );
+                            } else {
+                              const p = await requestNotifPermission();
+                              setNotifPermission(p);
+                            }
+                          }}
+                        >
+                          {notifPermission === "denied" ? "How to fix →" : "Grant permission →"}
+                        </button>
+                      )}
+                    </div>
+                    {notifPermission === "denied" && (
+                      <p className="text-rose-600 leading-5">Chrome is blocking notifications. Click <strong>"How to fix →"</strong> for steps, or go to Chrome Settings → Privacy → Site Settings → Notifications → find localhost and set to <strong>Allow</strong>.</p>
+                    )}
+                    {notifPermission === "default" && (
+                      <p className="text-amber-700 leading-5">Click <strong>"Grant permission →"</strong> — a browser prompt will appear asking to allow notifications. Click <strong>Allow</strong>. In Firefox, look for a small popup near the address bar.</p>
+                    )}
+                    {notifPermission === "granted" && (
+                      <p className="text-emerald-700 leading-5">Notifications are active. Use "Preview notification" to test, then enable reminders below.</p>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-3">
                     <Button
                       className="rounded-xl bg-slate-900 hover:bg-slate-800"
@@ -809,12 +934,13 @@ export default function SunSmartUIMockup() {
                     <Button variant="outline" className="rounded-xl bg-white" onClick={async () => {
                       const perm = Notification.permission === "granted"
                         ? "granted"
-                        : await Notification.requestPermission();
+                        : await requestNotifPermission();
+                      setNotifPermission(perm);
                       if (perm === "granted") {
-                        new Notification("☀️ SunSmart Preview", {
-                          body: `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. This is what your reminders will look like!`,
-                          icon: "/favicon.ico",
-                        });
+                        fireWithSW(
+                          "☀️ SunSmart Preview",
+                          `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. This is what your reminders will look like!`
+                        );
                       } else {
                         alert("Notifications are blocked. Please allow them in your browser settings (click the lock icon in the address bar).");
                       }
@@ -1008,10 +1134,10 @@ export default function SunSmartUIMockup() {
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Shirt className="h-5 w-5" /> Clothing recommendation
+                    <Shirt className="h-5 w-5" /> Clothing recommendation planner
                   </CardTitle>
                   <CardDescription>
-                    Here are some tips from us in order to help you stay safe under the sun!
+                    This section turns UV risk into action-oriented clothing suggestions with a cleaner card-based layout.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1051,10 +1177,10 @@ export default function SunSmartUIMockup() {
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Share2 className="h-5 w-5" /> Share it!
+                    <Share2 className="h-5 w-5" /> Share awareness content
                   </CardTitle>
                   <CardDescription>
-                    If you found our tips and info useful, share it with your friends! or click the download option to download this card as an image!
+                    Kept intentionally simple so the team can implement a practical share flow without overengineering the prototype.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1084,9 +1210,9 @@ export default function SunSmartUIMockup() {
                       } else {
                         alert("Sharing not supported on this browser.");
                       }
-                    }}>Share</Button>
+                    }}>Share to Instagram</Button>
                     <Button variant="outline" className="rounded-xl bg-white" onClick={handleDownloadInfo} id="download-info-btn">
-                      Download
+                      Download Info
                     </Button>
                   </div>
                 </CardContent>
@@ -1097,8 +1223,8 @@ export default function SunSmartUIMockup() {
 
         <footer className="mt-8 rounded-[28px] border border-white/70 bg-white/70 p-5 text-sm text-slate-500 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p>This is a prototype for the full application. Stay tuned!</p>
-            <p>SunSmart ©</p>
+            <p>Designed for your SunSmart UV awareness prototype with a stronger mainstream UI/UX direction.</p>
+            <p>React + shadcn/ui + Framer Motion + Recharts</p>
           </div>
         </footer>
       </div>
