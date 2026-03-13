@@ -60,26 +60,22 @@ const mythFacts = [
   {
     title: "You only need sunscreen on sunny days",
     type: "Myth",
-    content:
-      "UV can still be strong on cloudy days. Daily protection matters even when the weather looks mild.",
+    content: "UV can still be strong on cloudy days. Daily protection matters even when the weather looks mild.",
   },
   {
     title: "Darker skin tones can still be affected by UV damage",
     type: "Fact",
-    content:
-      "All skin tones can experience UV damage, pigmentation changes, and long-term skin risks. Protection is still important.",
+    content: "All skin tones can experience UV damage, pigmentation changes, and long-term skin risks. Protection is still important.",
   },
   {
     title: "Reapplying sunscreen matters during long outdoor periods",
     type: "Fact",
-    content:
-      "Sweat, water, and time reduce sunscreen effectiveness. Reapplication helps maintain protection throughout the day.",
+    content: "Sweat, water, and time reduce sunscreen effectiveness. Reapplication helps maintain protection throughout the day.",
   },
   {
     title: "A hat alone is enough for full UV protection",
     type: "Myth",
-    content:
-      "A hat helps, but the best protection combines sunscreen, shade, sunglasses, and suitable clothing.",
+    content: "A hat helps, but the best protection combines sunscreen, shade, sunglasses, and suitable clothing.",
   },
 ];
 
@@ -173,7 +169,6 @@ function getUvMeta(uv) {
   };
 }
 
-// Helper: send a browser notification
 function sendNotification(title, body) {
   if (Notification.permission === "granted") {
     new Notification(title, { body, icon: "/favicon.ico" });
@@ -186,7 +181,6 @@ function sendNotification(title, body) {
   }
 }
 
-// Helper: check UV and fire alert if high
 function maybeAlertUV(uv, locationName) {
   if (uv >= 6) {
     const level = uv <= 7 ? "High" : "Extreme";
@@ -214,19 +208,24 @@ export default function SunSmartUIMockup() {
   const [uvIndex, setUvIndex] = useState(0);
   const [location, setLocation] = useState("Detecting...");
   const [searchQuery, setSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [skinTone, setSkinTone] = useState(skinToneOptions[1]);
   const [email, setEmail] = useState("student@monash.edu");
   const [startTime, setStartTime] = useState("09:00");
   const [interval, setInterval] = useState("2 hours");
-
-  // ── Sunscreen reminder state ──────────────────────────────────────
   const [reminderActive, setReminderActive] = useState(false);
-  const [reminderStatus, setReminderStatus] = useState(""); // feedback text
+  const [reminderStatus, setReminderStatus] = useState("");
   const reminderTimerRef = useRef(null);
+const reminderTimeoutRef = useRef(null);
+const uvIndexRef = useRef(uvIndex);
+const locationRef = useRef(location);
+const intervalRef = useRef(interval);
+React.useEffect(() => { uvIndexRef.current = uvIndex; }, [uvIndex]);
+React.useEffect(() => { locationRef.current = location; }, [location]);
+React.useEffect(() => { intervalRef.current = interval; }, [interval]);
 
-  // Convert interval string to milliseconds
   function intervalToMs(intervalStr) {
     if (intervalStr === "10 seconds") return 10 * 1000;
     if (intervalStr === "30 seconds") return 30 * 1000;
@@ -239,60 +238,30 @@ export default function SunSmartUIMockup() {
     return 2 * 60 * 60 * 1000;
   }
 
-  // Enable repeating sunscreen reminder
   function enableReminder() {
-    // Clear any existing timer first
-    if (reminderTimerRef.current) {
-      clearInterval(reminderTimerRef.current);
-    }
-
-    // 计算距离设定时间还有多少毫秒
-const now = new Date();
-const [hours, minutes] = startTime.split(":").map(Number);
-const target = new Date();
-target.setHours(hours, minutes, 0, 0);
-
-// 如果设定时间已经过了，改成明天
-if (target <= now) {
-  target.setDate(target.getDate() + 1);
-}
-
-const delay = target - now;
-
-// 等到设定时间才发第一条
-setTimeout(() => {
-  sendNotification(
-    "🧴 SunSmart Sunscreen Reminder",
-    `Time to apply sunscreen! UV is ${uvIndex} (${getUvMeta(uvIndex).level}) at ${location}.`
-  );
-  // 然后每隔interval重复
-  reminderTimerRef.current = setInterval(() => {
-    sendNotification(
-      "🧴 SunSmart Sunscreen Reminder",
-      `Time to reapply your sunscreen! UV is currently ${uvIndex} (${getUvMeta(uvIndex).level}) at ${location}.`
-    );
-  }, intervalToMs(interval));
-}, delay);
-
-    // Set up repeating reminder
-    const ms = intervalToMs(interval);
-    
-
+    if (reminderTimeoutRef.current) clearTimeout(reminderTimeoutRef.current);
+    if (reminderTimerRef.current) clearInterval(reminderTimerRef.current);
+  
     setReminderActive(true);
     setReminderStatus(`✅ Reminder enabled — you'll be notified every ${interval}.`);
+  
+    reminderTimerRef.current = setInterval(() => {
+      sendNotification(
+        "🧴 SunSmart Sunscreen Reminder",
+        `Time to reapply your sunscreen! UV is currently ${uvIndexRef.current} (${getUvMeta(uvIndexRef.current).level}) at ${locationRef.current}.`
+      );
+    }, intervalToMs(intervalRef.current));
   }
 
-  // Disable reminder
   function disableReminder() {
-    if (reminderTimerRef.current) {
-      clearInterval(reminderTimerRef.current);
-      reminderTimerRef.current = null;
-    }
+    if (reminderTimeoutRef.current) clearTimeout(reminderTimeoutRef.current);
+    if (reminderTimerRef.current) clearInterval(reminderTimerRef.current);
+    reminderTimeoutRef.current = null;
+    reminderTimerRef.current = null;
     setReminderActive(false);
     setReminderStatus("🔕 Reminder disabled.");
   }
 
-  // Preview notification (fires one immediately)
   function previewNotification() {
     sendNotification(
       "🧴 SunSmart Sunscreen Reminder",
@@ -300,7 +269,20 @@ setTimeout(() => {
     );
     setReminderStatus("📣 Preview sent — check your notifications.");
   }
-  // ─────────────────────────────────────────────────────────────────
+
+  // 搜索自动补全
+  const fetchSuggestions = async (query) => {
+    if (!query.trim()) { setSuggestions([]); return; }
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`
+      );
+      const data = await res.json();
+      setSuggestions(data);
+    } catch {
+      setSuggestions([]);
+    }
+  };
 
   const fetchUVByLocation = async () => {
     setLoading(true);
@@ -326,10 +308,7 @@ setTimeout(() => {
       const uvData = await uvRes.json();
       const uv = Math.round(uvData.current.uv_index);
       setUvIndex(uv);
-
-      // 🔔 Fire UV alert notification if UV is high
       maybeAlertUV(uv, displayLocation);
-
     } catch (err) {
       alert("Unable to get location. Please allow location access.");
     } finally {
@@ -338,9 +317,33 @@ setTimeout(() => {
     }
   };
 
+  // 直接用坐标搜索UV（供自动补全选项使用）
+  const fetchUVByCoords = async (lat, lon, displayName) => {
+    setLoading(true);
+    setSuggestions([]);
+    try {
+      const searchLocation = displayName.split(",").slice(0, 2).join(",");
+      setLocation(searchLocation);
+      setSearchQuery(searchLocation);
+
+      const uvRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=uv_index`
+      );
+      const uvData = await uvRes.json();
+      const uv = Math.round(uvData.current.uv_index);
+      setUvIndex(uv);
+      maybeAlertUV(uv, searchLocation);
+    } catch (err) {
+      alert("Search failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const searchUVByName = async () => {
     if (!searchQuery.trim()) return;
     setLoading(true);
+    setSuggestions([]);
     try {
       const geoRes = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1`
@@ -360,10 +363,7 @@ setTimeout(() => {
       const uvData = await uvRes.json();
       const uv = Math.round(uvData.current.uv_index);
       setUvIndex(uv);
-
-      // 🔔 Fire UV alert notification if UV is high
       maybeAlertUV(uv, searchLocation);
-
     } catch (err) {
       alert("Search failed. Please try again.");
     } finally {
@@ -426,11 +426,7 @@ setTimeout(() => {
         </motion.header>
 
         <section className="mb-6 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
             <Card className="overflow-hidden rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
               <CardContent className="p-0">
                 <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
@@ -446,7 +442,6 @@ setTimeout(() => {
                       The landing experience is built around the core story requirement: current location, current UV index,
                       risk messaging, and immediate protection suggestions in one glance.
                     </p>
-
                     <div className="mt-6 grid gap-3 sm:grid-cols-3">
                       <StatPill icon={MapPin} label="Location" value={location} />
                       <StatPill icon={TriangleAlert} label="Risk level" value={uvMeta.level} />
@@ -476,11 +471,7 @@ setTimeout(() => {
             </Card>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
             <Card className="h-full rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -500,18 +491,49 @@ setTimeout(() => {
                 <div className="space-y-2">
                   <Label>Search any location</Label>
                   <div className="flex gap-2">
+                    {/* 搜索框 + 自动补全下拉 */}
                     <div className="relative flex-1">
-                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 z-10" />
                       <Input
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && searchUVByName()}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          fetchSuggestions(e.target.value);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            setSuggestions([]);
+                            searchUVByName();
+                          }
+                        }}
                         placeholder="Search suburb, city or landmark..."
                         className="rounded-xl bg-white pl-9"
                       />
+                      {/* 自动补全下拉列表 */}
+                      {suggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                          {suggestions.map((s) => (
+                            <button
+                              key={s.place_id}
+                              onClick={() => fetchUVByCoords(s.lat, s.lon, s.display_name)}
+                              className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                            >
+                              <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                              <div>
+                                <p className="font-medium text-slate-800">
+                                  {s.display_name.split(",")[0]}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {s.display_name.split(",").slice(1, 3).join(",")}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <Button
-                      onClick={searchUVByName}
+                      onClick={() => { setSuggestions([]); searchUVByName(); }}
                       disabled={loading}
                       className="rounded-xl bg-slate-900 hover:bg-slate-800"
                     >
@@ -585,7 +607,6 @@ setTimeout(() => {
                 </CardContent>
               </Card>
 
-              {/* ── Sunscreen reminder card (now fully functional) ── */}
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -609,19 +630,19 @@ setTimeout(() => {
                     <div className="space-y-2">
                       <Label>Reminder interval</Label>
                       <select
-  value={interval}
-  onChange={(e) => setInterval(e.target.value)}
-  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
->
-  <option>10 seconds</option>
-  <option>30 seconds</option>
-  <option>1 minute</option>
-  <option>2 minutes</option>
-  <option>5 minutes</option>
-  <option>2 hours</option>
-  <option>3 hours</option>
-  <option>4 hours</option>
-</select>
+                        value={interval}
+                        onChange={(e) => setInterval(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none"
+                      >
+                        <option>10 seconds</option>
+                        <option>30 seconds</option>
+                        <option>1 minute</option>
+                        <option>2 minutes</option>
+                        <option>5 minutes</option>
+                        <option>2 hours</option>
+                        <option>3 hours</option>
+                        <option>4 hours</option>
+                      </select>
                     </div>
                   </div>
 
@@ -632,30 +653,19 @@ setTimeout(() => {
 
                   <div className="flex flex-wrap gap-3">
                     {reminderActive ? (
-                      <Button
-                        onClick={disableReminder}
-                        className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
-                      >
+                      <Button onClick={disableReminder} className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
                         Disable reminder
                       </Button>
                     ) : (
-                      <Button
-                        onClick={enableReminder}
-                        className="rounded-xl bg-slate-900 hover:bg-slate-800"
-                      >
+                      <Button onClick={enableReminder} className="rounded-xl bg-slate-900 hover:bg-slate-800">
                         Enable reminder
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      className="rounded-xl bg-white"
-                      onClick={previewNotification}
-                    >
+                    <Button variant="outline" className="rounded-xl bg-white" onClick={previewNotification}>
                       Preview notification
                     </Button>
                   </div>
 
-                  {/* Status feedback */}
                   {reminderStatus && (
                     <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-sm text-slate-700">
                       {reminderStatus}
@@ -791,10 +801,7 @@ setTimeout(() => {
                           }`}
                         >
                           <div className="mb-3 flex items-center gap-3">
-                            <span
-                              className="h-8 w-8 rounded-full border border-black/10"
-                              style={{ backgroundColor: option.swatch }}
-                            />
+                            <span className="h-8 w-8 rounded-full border border-black/10" style={{ backgroundColor: option.swatch }} />
                             <div>
                               <p className="font-semibold">{option.name}</p>
                               <p className={`text-xs ${active ? "text-white/70" : "text-slate-500"}`}>{option.description}</p>
@@ -822,9 +829,7 @@ setTimeout(() => {
                         <p className="text-sm text-slate-500">{skinTone.description}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className="rounded-full bg-white">
-                      {skinTone.sensitivity}
-                    </Badge>
+                    <Badge variant="outline" className="rounded-full bg-white">{skinTone.sensitivity}</Badge>
                     <p className="mt-4 text-sm leading-7 text-slate-600">{skinTone.advice}</p>
                   </div>
 
@@ -909,7 +914,8 @@ setTimeout(() => {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">Share to Instagram</Button>
-                    <Button variant="outline" className="rounded-xl bg-white">Copy share text</Button>
+                    <Button variant="outli
+                    ne" className="rounded-xl bg-white">Copy share text</Button>
                     <Button variant="outline" className="rounded-xl bg-white">Download awareness card</Button>
                     <Button variant="outline" className="rounded-xl bg-white">Open social preview</Button>
                   </div>
