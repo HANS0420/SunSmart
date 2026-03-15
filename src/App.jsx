@@ -23,8 +23,8 @@ import {
   LogIn,
 } from "lucide-react";
 import {
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -32,6 +32,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,26 +42,75 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-const uvTrendData = [
-  { month: "Jan", uv: 11 },
-  { month: "Feb", uv: 10 },
-  { month: "Mar", uv: 8 },
-  { month: "Apr", uv: 6 },
-  { month: "May", uv: 4 },
-  { month: "Jun", uv: 3 },
-  { month: "Jul", uv: 4 },
-  { month: "Aug", uv: 5 },
-  { month: "Sep", uv: 7 },
-  { month: "Oct", uv: 9 },
-  { month: "Nov", uv: 10 },
-  { month: "Dec", uv: 11 },
+const melanomaTrendData = [
+  { year: 1982, males: 405, females: 593, persons: 998 },
+  { year: 1983, males: 415, females: 671, persons: 1086 },
+  { year: 1984, males: 426, females: 633, persons: 1059 },
+  { year: 1985, males: 495, females: 738, persons: 1233 },
+  { year: 1986, males: 545, females: 700, persons: 1245 },
+  { year: 1987, males: 679, females: 820, persons: 1499 },
+  { year: 1988, males: 726, females: 823, persons: 1549 },
+  { year: 1989, males: 598, females: 724, persons: 1322 },
+  { year: 1990, males: 593, females: 691, persons: 1284 },
+  { year: 1991, males: 608, females: 736, persons: 1344 },
+  { year: 1992, males: 617, females: 729, persons: 1346 },
+  { year: 1993, males: 603, females: 720, persons: 1323 },
+  { year: 1994, males: 655, females: 711, persons: 1366 },
+  { year: 1995, males: 678, females: 882, persons: 1560 },
+  { year: 1996, males: 664, females: 848, persons: 1512 },
+  { year: 1997, males: 699, females: 882, persons: 1581 },
+  { year: 1998, males: 602, females: 787, persons: 1389 },
+  { year: 1999, males: 655, females: 789, persons: 1444 },
+  { year: 2000, males: 631, females: 802, persons: 1433 },
+  { year: 2001, males: 631, females: 761, persons: 1392 },
+  { year: 2002, males: 629, females: 754, persons: 1383 },
+  { year: 2003, males: 598, females: 721, persons: 1319 },
+  { year: 2004, males: 627, females: 715, persons: 1342 },
+  { year: 2005, males: 611, females: 770, persons: 1381 },
+  { year: 2006, males: 596, females: 704, persons: 1300 },
+  { year: 2007, males: 506, females: 692, persons: 1198 },
+  { year: 2008, males: 563, females: 688, persons: 1251 },
+  { year: 2009, males: 580, females: 661, persons: 1241 },
+  { year: 2010, males: 521, females: 621, persons: 1142 },
+  { year: 2011, males: 496, females: 606, persons: 1102 },
+  { year: 2012, males: 521, females: 642, persons: 1163 },
+  { year: 2013, males: 498, females: 655, persons: 1153 },
+  { year: 2014, males: 488, females: 602, persons: 1090 },
+  { year: 2015, males: 460, females: 640, persons: 1100 },
+  { year: 2016, males: 517, females: 723, persons: 1240 },
+  { year: 2017, males: 525, females: 647, persons: 1172 },
+  { year: 2018, males: 507, females: 697, persons: 1204 },
+  { year: 2019, males: 539, females: 689, persons: 1228 },
 ];
 
-const riskData = [
-  { label: "Low", value: 15 },
-  { label: "Moderate", value: 28 },
-  { label: "High", value: 39 },
-  { label: "Extreme", value: 18 },
+const generationalAwarenessData = [
+  {
+    group: "Gen Z",
+    fullLabel: "15-24 years",
+    suntan: 20.6,
+    sunburn: 15.2,
+    sunscreen: 38.9,
+  },
+  {
+    group: "Millennials",
+    fullLabel: "35-44 years",
+    suntan: 8.1,
+    sunburn: 8.0,
+    sunscreen: 45.5,
+  },
+  {
+    group: "Boomers",
+    fullLabel: "65+ years",
+    suntan: 3.3,
+    sunburn: 2.0,
+    sunscreen: 27.4,
+  },
+];
+
+const awarenessLegend = [
+  { label: "Attempted to suntan", color: "#F28E2B" },
+  { label: "Experienced sunburn", color: "#D94F70" },
+  { label: "Used sunscreen regularly", color: "#4E79A7" },
 ];
 
 const mythFacts = [
@@ -190,6 +240,33 @@ function StatPill({ icon: Icon, label, value }) {
       <div className="text-lg font-semibold text-slate-900">{value}</div>
     </div>
   );
+}
+
+function buildUserId(email = "") {
+  return email.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "demo-user";
+}
+
+function buildDisplayName(email = "") {
+  const localPart = email.split("@")[0] || "SunSmart User";
+  return localPart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "SunSmart User";
+}
+
+function getIntervalMs(intervalValue, intervalUnit) {
+  const value = Number(intervalValue) || 1;
+  if (intervalUnit === "minutes") return value * 60 * 1000;
+  if (intervalUnit === "days") return value * 24 * 60 * 60 * 1000;
+  return value * 60 * 60 * 1000;
+}
+
+function formatClockTime(date) {
+  return date.toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function AuthScreen({ onLoginSuccess }) {
@@ -528,12 +605,111 @@ function MainApp({ currentUser, handleLogout }) {
   const [intervalValue, setIntervalValue] = useState(2);
   const [intervalUnit, setIntervalUnit] = useState("hours");
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState("");
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const reminderRef = React.useRef(null);
   const alertedRef = React.useRef(false);
+  const currentUserId = buildUserId(currentUser?.email);
 
   const uvMeta = useMemo(() => getUvMeta(displayUV), [displayUV]);
   const clothingTips = clothingByRisk[uvMeta.level];
   const sunscreenTip = sunscreenByRisk[uvMeta.level];
+  const nextReminderPreview = useMemo(() => {
+    const [hours, minutes] = startTime.split(":").map(Number);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return null;
+    }
+
+    const initial = new Date();
+    initial.setHours(hours, minutes, 0, 0);
+
+    const next = new Date(initial.getTime() + getIntervalMs(intervalValue, intervalUnit));
+
+    return {
+      initialLabel: formatClockTime(initial),
+      nextLabel: formatClockTime(next),
+    };
+  }, [startTime, intervalValue, intervalUnit]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      setSettingsLoading(true);
+      setSettingsStatus("");
+      try {
+        const res = await fetch(`/api/settings/${encodeURIComponent(currentUserId)}`);
+        const data = await res.json();
+
+        if (res.status === 404) {
+          setSettingsStatus("");
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || "Could not load saved settings.");
+        }
+
+        if (data.settings) {
+          setEmail(data.settings.email || currentUser?.email || "student@monash.edu");
+          setSearchedLocation(data.settings.location || "Melbourne, VIC");
+          setSkinTone(
+            skinToneOptions.find((option) => option.id === data.settings.skinTone) || skinToneOptions[1]
+          );
+          setStartTime(data.settings.startTime || "09:00");
+
+          const intervalParts = String(data.settings.interval || "2 hours").split(" ");
+          if (intervalParts[0]) {
+            setIntervalValue(Number(intervalParts[0]) || 2);
+          }
+          if (intervalParts[1]) {
+            setIntervalUnit(intervalParts[1]);
+          }
+          setSettingsStatus("");
+        }
+      } catch (error) {
+        setSettingsStatus(error.message || "Could not load settings.");
+      } finally {
+        setSettingsLoading(false);
+      }
+    };
+
+    loadSettings();
+  }, [currentUser?.email, currentUserId]);
+
+  const saveSettingsToBackend = async () => {
+    setSettingsLoading(true);
+    setSettingsStatus("");
+    try {
+      const interval = `${intervalValue} ${intervalUnit}`;
+      const payload = {
+        userId: currentUserId,
+        email,
+        name: buildDisplayName(currentUser?.email || email),
+        location: searchedLocation,
+        skinTone: skinTone.id,
+        startTime,
+        interval,
+      };
+
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Could not save settings.");
+      }
+
+      setSettingsStatus("");
+      return data.settings;
+    } catch (error) {
+      setSettingsStatus(error.message || "Could not save settings.");
+      throw error;
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (displayUV >= 3 && !alertedRef.current && Notification.permission === "granted") {
@@ -549,6 +725,13 @@ function MainApp({ currentUser, handleLogout }) {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
       alert("Please allow notifications to enable reminders.");
+      return;
+    }
+
+    try {
+      await saveSettingsToBackend();
+    } catch {
+      alert("We couldn't save your reminder settings right now. Please try again.");
       return;
     }
 
@@ -1159,12 +1342,23 @@ function MainApp({ currentUser, handleLogout }) {
                     <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
                   </div>
 
+                  {settingsStatus && (
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
+                      <p>{settingsStatus}</p>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-3">
                     <Button
                       className="rounded-xl bg-slate-900 hover:bg-slate-800"
                       onClick={reminderEnabled ? handleDisableReminder : handleEnableReminder}
+                      disabled={settingsLoading}
                     >
-                      {reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
+                      {settingsLoading
+                        ? "Saving..."
+                        : reminderEnabled
+                          ? "Reminder On ✓ (click to disable)"
+                          : "Enable reminder"}
                     </Button>
 
                     <Button
@@ -1191,8 +1385,15 @@ function MainApp({ currentUser, handleLogout }) {
                   </div>
 
                   <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                    Next reminder preview: <span className="font-medium text-slate-900">{startTime}</span> → every{" "}
-                    <span className="font-medium text-slate-900">{intervalValue} {intervalUnit}</span>.
+                    Next reminder at{" "}
+                    <span className="font-medium text-slate-900">
+                      {nextReminderPreview?.nextLabel || startTime}
+                    </span>
+                    {" "}→ every{" "}
+                    <span className="font-medium text-slate-900">
+                      {intervalValue} {intervalUnit}
+                    </span>
+                    .
                   </div>
                 </CardContent>
               </Card>
@@ -1203,58 +1404,145 @@ function MainApp({ currentUser, handleLogout }) {
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
-                  <CardTitle>Australia UV trends</CardTitle>
+                  <CardTitle>Young adult melanoma trends</CardTitle>
                   <CardDescription>
-                    Interactive chart space for Epic 2: awareness visuals with hover-friendly explanations.
+                    A long-term trend view helps connect sun-safety behaviour with real melanoma burden in Australians aged 15 to 39.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[320px] w-full text-slate-700">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={uvTrendData}>
-                        <defs>
-                          <linearGradient id="uvFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="currentColor" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="currentColor" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
+                      <LineChart data={melanomaTrendData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} domain={[0, 12]} />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="uv" stroke="currentColor" fill="url(#uvFill)" strokeWidth={3} />
-                      </AreaChart>
+                        <XAxis dataKey="year" tickLine={false} axisLine={false} interval={5} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <Tooltip
+                          formatter={(value, name) => {
+                            const labels = {
+                              males: "Males",
+                              females: "Females",
+                              persons: "Persons",
+                            };
+                            return [`${value}`, labels[name] || name];
+                          }}
+                          labelFormatter={(label) => `Year: ${label}`}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="males"
+                          name="Males"
+                          stroke="#2563EB"
+                          strokeWidth={3}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="females"
+                          name="Females"
+                          stroke="#D946EF"
+                          strokeWidth={3}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="persons"
+                          name="Persons"
+                          stroke="#0F172A"
+                          strokeWidth={3}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                   <p className="mt-4 text-sm leading-6 text-slate-600">
-                    The chart area gives your team a polished placeholder for local or national UV data while already meeting the visual interaction expectation in the acceptance criteria.
+                    The chart shows how melanoma cases in young adults rose through the late 1980s and 1990s, then generally trended lower in later years while still remaining substantial.
+                  </p>
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
+                    Source: AIHW Australian Cancer Database and National Mortality Database.
                   </p>
                 </CardContent>
               </Card>
 
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
-                  <CardTitle>Risk awareness snapshot</CardTitle>
-                  <CardDescription>Simple, social-friendly graphics are easier to understand and easier to share.</CardDescription>
+                  <CardTitle>Generational sun-safety snapshot</CardTitle>
+                  <CardDescription>
+                    This compares tanning, sunburn, and sunscreen habits across age groups so the awareness feature tells a clearer story.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[320px] w-full text-slate-700">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={riskData}>
+                      <BarChart data={generationalAwarenessData} barGap={10}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="value" radius={[10, 10, 0, 0]} />
+                        <XAxis dataKey="group" tickLine={false} axisLine={false} />
+                        <YAxis tickLine={false} axisLine={false} domain={[0, 50]} />
+                        <Tooltip
+                          formatter={(value) => [`${value}%`, ""]}
+                          labelFormatter={(label, payload) => {
+                            const item = payload?.[0]?.payload;
+                            return item ? `${label} (${item.fullLabel})` : label;
+                          }}
+                        />
+                        <Legend />
+                        <Bar
+                          dataKey="suntan"
+                          name="Attempted to suntan"
+                          fill="#F28E2B"
+                          radius={[8, 8, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="sunburn"
+                          name="Experienced sunburn"
+                          fill="#D94F70"
+                          radius={[8, 8, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="sunscreen"
+                          name="Used sunscreen regularly"
+                          fill="#4E79A7"
+                          radius={[8, 8, 0, 0]}
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {awarenessLegend.map((item) => (
+                      <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                          <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-sm leading-6 text-slate-600">
+                    Gen Z shows the highest tanning and sunburn rates, while Millennials report the strongest regular sunscreen use. That contrast gives the awareness tab a stronger educational message.
+                  </p>
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
+                    Source:
+                    {" "}
+                    <a
+                      href="https://www.abs.gov.au/statistics/health/health-conditions-and-risks/sun-protection-behaviours/latest-release"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-slate-700 underline decoration-slate-300 underline-offset-2"
+                    >
+                      ABS Sun Protection Behaviours
+                    </a>
+                    {" "}
+                    latest release.
+                  </p>
                   <div className="mt-4 flex flex-wrap gap-3">
                     <Button className="rounded-xl bg-slate-900 hover:bg-slate-800">
-                      <Share2 className="mr-2 h-4 w-4" /> Share visual
+                      <Share2 className="mr-2 h-4 w-4" /> Share insight
                     </Button>
                     <Button variant="outline" className="rounded-xl bg-white">
-                      <ChevronRight className="mr-2 h-4 w-4" /> View explanation
+                      <ChevronRight className="mr-2 h-4 w-4" /> Why this matters
                     </Button>
                   </div>
                 </CardContent>

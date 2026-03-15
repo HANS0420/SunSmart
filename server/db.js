@@ -1,135 +1,81 @@
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const dataDir = join(__dirname, "..", ".data");
-const dbPath = join(dataDir, "sunsmart.sqlite");
+import dotenv from "dotenv";
+import pg from "pg";
 
-mkdirSync(dataDir, { recursive: true });
+dotenv.config();
 
-const db = new DatabaseSync(dbPath);
+const { Pool } = pg;
+const connectionString = process.env.DATABASE_URL;
 
-db.exec(`
-  PRAGMA foreign_keys = ON;
+if (!connectionString) {
+  console.warn("DATABASE_URL is not set. Add it to .env before starting the server.");
+}
 
-  CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,
-    email TEXT NOT NULL,
-    name TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS user_settings (
-    settings_id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL UNIQUE,
-    location TEXT NOT NULL,
-    skin_tone TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    reminder_interval TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS reminder_log (
-    reminder_id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    reminder_type TEXT NOT NULL,
-    scheduled_for TEXT NOT NULL,
-    sent_at TEXT NOT NULL,
-    delivery_status TEXT NOT NULL,
-    provider_message TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-  );
-`);
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : false,
+});
 
 const seedUserId = "demo-user";
 
-db.prepare(`
-  INSERT INTO users (user_id, email, name)
-  VALUES (?, ?, ?)
-  ON CONFLICT(user_id) DO NOTHING
-`).run(seedUserId, "student@monash.edu", "SunSmart Demo User");
+export async function initDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      user_id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL
+    );
 
-db.prepare(`
-  INSERT INTO user_settings (settings_id, user_id, location, skin_tone, start_time, reminder_interval)
-  VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(user_id) DO NOTHING
-`).run(`${seedUserId}-settings`, seedUserId, "Melbourne, VIC", "light", "09:00", "2 hours");
+    CREATE TABLE IF NOT EXISTS user_settings (
+      settings_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
+      location TEXT NOT NULL,
+      skin_tone TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      reminder_interval TEXT NOT NULL
+    );
 
-const getJoinedSettings = db.prepare(`
-  SELECT
-    u.user_id,
-    u.email,
-    u.name,
-    s.settings_id,
-    s.location,
-    s.skin_tone,
-    s.start_time,
-    s.reminder_interval
-  FROM users u
-  LEFT JOIN user_settings s ON s.user_id = u.user_id
-  WHERE u.user_id = ?
-`);
+    CREATE TABLE IF NOT EXISTS reminder_log (
+      reminder_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      reminder_type TEXT NOT NULL,
+      scheduled_for TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      delivery_status TEXT NOT NULL,
+      provider_message TEXT
+    );
+  `);
 
-const upsertUser = db.prepare(`
-  INSERT INTO users (user_id, email, name)
-  VALUES (?, ?, ?)
-  ON CONFLICT(user_id) DO UPDATE SET
-    email = excluded.email,
-    name = excluded.name
-`);
+  await pool.query(
+    `
+      INSERT INTO users (user_id, email, name)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id)
+      DO NOTHING
+    `,
+    [seedUserId, "student@monash.edu", "SunSmart Demo User"],
+  );
 
-const upsertSettings = db.prepare(`
-  INSERT INTO user_settings (settings_id, user_id, location, skin_tone, start_time, reminder_interval)
-  VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(user_id) DO UPDATE SET
-    location = excluded.location,
-    skin_tone = excluded.skin_tone,
-    start_time = excluded.start_time,
-    reminder_interval = excluded.reminder_interval
-`);
+  await pool.query(
+    `
+      INSERT INTO user_settings (
+        settings_id,
+        user_id,
+        location,
+        skin_tone,
+        start_time,
+        reminder_interval
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id)
+      DO NOTHING
+    `,
+    [`${seedUserId}-settings`, seedUserId, "Melbourne, VIC", "light", "09:00", "2 hours"],
+  );
+}
 
-const listSettingsRows = db.prepare(`
-  SELECT
-    u.user_id,
-    u.email,
-    u.name,
-    s.settings_id,
-    s.location,
-    s.skin_tone,
-    s.start_time,
-    s.reminder_interval
-  FROM users u
-  INNER JOIN user_settings s ON s.user_id = u.user_id
-`);
-
-const getReminderLogBySchedule = db.prepare(`
-  SELECT reminder_id
-  FROM reminder_log
-  WHERE user_id = ?
-    AND reminder_type = ?
-    AND scheduled_for = ?
-  LIMIT 1
-`);
-
-const insertReminderLog = db.prepare(`
-  INSERT INTO reminder_log (
-    reminder_id,
-    user_id,
-    reminder_type,
-    scheduled_for,
-    sent_at,
-    delivery_status,
-    provider_message
-  )
-  VALUES (?, ?, ?, ?, ?, ?, ?)
-`);
-
-export function getUserSettings(userId) {
-  const row = getJoinedSettings.get(userId);
-
+function mapSettingsRow(row) {
   if (!row) {
     return null;
   }
@@ -146,7 +92,30 @@ export function getUserSettings(userId) {
   };
 }
 
-export function saveUserSettings({
+export async function getUserSettings(userId) {
+  const { rows } = await pool.query(
+    `
+      SELECT
+        u.user_id,
+        u.email,
+        u.name,
+        s.settings_id,
+        s.location,
+        s.skin_tone,
+        s.start_time,
+        s.reminder_interval
+      FROM users u
+      LEFT JOIN user_settings s ON s.user_id = u.user_id
+      WHERE u.user_id = $1 OR u.email = $1
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return mapSettingsRow(rows[0]);
+}
+
+export async function saveUserSettings({
   userId,
   email,
   name,
@@ -155,50 +124,121 @@ export function saveUserSettings({
   startTime,
   interval,
 }) {
-  const existing = getUserSettings(userId);
-  const settingsId = existing?.settingsId ?? `${userId}-${randomUUID()}`;
+  const existingByUserId = await getUserSettings(userId);
+  const existingByEmail = await getUserSettings(email);
+  const existing = existingByUserId || existingByEmail;
+  const effectiveUserId = existing?.userId ?? userId;
+  const settingsId = existing?.settingsId ?? `${effectiveUserId}-${randomUUID()}`;
 
-  upsertUser.run(userId, email, name);
-  upsertSettings.run(settingsId, userId, location, skinTone, startTime, interval);
+  await pool.query(
+    `
+      INSERT INTO users (user_id, email, name)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        email = EXCLUDED.email,
+        name = EXCLUDED.name
+    `,
+    [effectiveUserId, email, name],
+  );
 
-  return getUserSettings(userId);
+  await pool.query(
+    `
+      INSERT INTO user_settings (
+        settings_id,
+        user_id,
+        location,
+        skin_tone,
+        start_time,
+        reminder_interval
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        location = EXCLUDED.location,
+        skin_tone = EXCLUDED.skin_tone,
+        start_time = EXCLUDED.start_time,
+        reminder_interval = EXCLUDED.reminder_interval
+    `,
+    [settingsId, effectiveUserId, location, skinTone, startTime, interval],
+  );
+
+  return getUserSettings(effectiveUserId);
 }
 
 export function getDatabasePath() {
-  return dbPath;
+  return "postgresql";
 }
 
-export function listAllSettings() {
-  return listSettingsRows.all().map((row) => ({
-    userId: row.user_id,
-    settingsId: row.settings_id,
-    email: row.email,
-    name: row.name,
-    location: row.location,
-    skinTone: row.skin_tone,
-    startTime: row.start_time,
-    interval: row.reminder_interval,
-  }));
+export async function listAllSettings() {
+  const { rows } = await pool.query(
+    `
+      SELECT
+        u.user_id,
+        u.email,
+        u.name,
+        s.settings_id,
+        s.location,
+        s.skin_tone,
+        s.start_time,
+        s.reminder_interval
+      FROM users u
+      INNER JOIN user_settings s ON s.user_id = u.user_id
+      ORDER BY u.name ASC
+    `,
+  );
+
+  return rows.map(mapSettingsRow);
 }
 
-export function hasReminderBeenSent(userId, reminderType, scheduledFor) {
-  return Boolean(getReminderLogBySchedule.get(userId, reminderType, scheduledFor));
+export async function hasReminderBeenSent(userId, reminderType, scheduledFor) {
+  const { rows } = await pool.query(
+    `
+      SELECT reminder_id
+      FROM reminder_log
+      WHERE user_id = $1
+        AND reminder_type = $2
+        AND scheduled_for = $3
+      LIMIT 1
+    `,
+    [userId, reminderType, scheduledFor],
+  );
+
+  return Boolean(rows[0]);
 }
 
-export function logReminder({
+export async function logReminder({
   userId,
   reminderType,
   scheduledFor,
   deliveryStatus,
   providerMessage = "",
 }) {
-  insertReminderLog.run(
-    randomUUID(),
-    userId,
-    reminderType,
-    scheduledFor,
-    new Date().toISOString(),
-    deliveryStatus,
-    providerMessage,
+  await pool.query(
+    `
+      INSERT INTO reminder_log (
+        reminder_id,
+        user_id,
+        reminder_type,
+        scheduled_for,
+        sent_at,
+        delivery_status,
+        provider_message
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `,
+    [
+      randomUUID(),
+      userId,
+      reminderType,
+      scheduledFor,
+      new Date().toISOString(),
+      deliveryStatus,
+      providerMessage,
+    ],
   );
+}
+
+export async function closeDatabase() {
+  await pool.end();
 }
