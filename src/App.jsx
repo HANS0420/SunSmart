@@ -138,6 +138,18 @@ const mythFacts = [
     content:
       "A hat helps, but the best protection combines sunscreen, shade, sunglasses, and suitable clothing.",
   },
+  {
+    title: "SPF 30 and SPF 50+ make no real difference",
+    type: "Myth",
+    content:
+      "SPF 50+ blocks significantly more UV radiation than SPF 30. For Australian UV conditions, higher SPF is consistently recommended.",
+  },
+  {
+    title: "Windows block UV rays completely",
+    type: "Myth",
+    content:
+      "Standard glass blocks UVB rays but lets UVA rays through. Prolonged time near windows — in cars or offices — can still expose skin to UV damage.",
+  },
 ];
 
 const skinToneOptions = [
@@ -232,12 +244,12 @@ function getUvMeta(uv) {
 
 function StatPill({ icon: Icon, label, value }) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/70 p-4 backdrop-blur">
-      <div className="mb-2 flex items-center gap-2 text-slate-500">
-        <Icon className="h-4 w-4" />
-        <span className="text-sm">{label}</span>
+    <div className="rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur min-w-[130px]">
+      <div className="flex items-center gap-1.5 text-slate-500">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="text-xs">{label}</span>
       </div>
-      <div className="text-lg font-semibold text-slate-900">{value}</div>
+      <div className="mt-1 text-base font-semibold text-slate-900 leading-snug">{value}</div>
     </div>
   );
 }
@@ -406,32 +418,16 @@ function AuthScreen({ onLoginSuccess }) {
           </div>
 
           <div className="space-y-4">
-            <Badge variant="outline" className="rounded-full bg-white/80">
-              Secure access prototype
-            </Badge>
+            
 
             <h2 className="text-4xl font-bold tracking-tight leading-tight">
-              Simple login flow for your team demo.
+              Welcome to SunSmart
             </h2>
 
             <p className="text-slate-600 leading-7">
-              This version includes frontend login and registration validation so your prototype feels more complete and realistic during presentation.
+              We help provide you with Real-time location based UV levels and related information on how to protect yourself under the sun
             </p>
 
-            <div className="grid gap-3 sm:grid-cols-2 mt-6">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="font-semibold text-slate-900">What works now</p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Login, register, input validation, saved session, logout.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="font-semibold text-slate-900">What comes later</p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Real backend auth with Firebase, Cognito, or a custom API.
-                </p>
-              </div>
-            </div>
           </div>
         </motion.div>
 
@@ -631,85 +627,9 @@ function MainApp({ currentUser, handleLogout }) {
     };
   }, [startTime, intervalValue, intervalUnit]);
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      setSettingsLoading(true);
-      setSettingsStatus("");
-      try {
-        const res = await fetch(`/api/settings/${encodeURIComponent(currentUserId)}`);
-        const data = await res.json();
+  // Settings are stored locally in state — no backend required
 
-        if (res.status === 404) {
-          setSettingsStatus("");
-          return;
-        }
 
-        if (!res.ok) {
-          throw new Error(data.error || "Could not load saved settings.");
-        }
-
-        if (data.settings) {
-          setEmail(data.settings.email || currentUser?.email || "student@monash.edu");
-          setSearchedLocation(data.settings.location || "Melbourne, VIC");
-          setSkinTone(
-            skinToneOptions.find((option) => option.id === data.settings.skinTone) || skinToneOptions[1]
-          );
-          setStartTime(data.settings.startTime || "09:00");
-
-          const intervalParts = String(data.settings.interval || "2 hours").split(" ");
-          if (intervalParts[0]) {
-            setIntervalValue(Number(intervalParts[0]) || 2);
-          }
-          if (intervalParts[1]) {
-            setIntervalUnit(intervalParts[1]);
-          }
-          setSettingsStatus("");
-        }
-      } catch (error) {
-        setSettingsStatus(error.message || "Could not load settings.");
-      } finally {
-        setSettingsLoading(false);
-      }
-    };
-
-    loadSettings();
-  }, [currentUser?.email, currentUserId]);
-
-  const saveSettingsToBackend = async () => {
-    setSettingsLoading(true);
-    setSettingsStatus("");
-    try {
-      const interval = `${intervalValue} ${intervalUnit}`;
-      const payload = {
-        userId: currentUserId,
-        email,
-        name: buildDisplayName(currentUser?.email || email),
-        location: searchedLocation,
-        skinTone: skinTone.id,
-        startTime,
-        interval,
-      };
-
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Could not save settings.");
-      }
-
-      setSettingsStatus("");
-      return data.settings;
-    } catch (error) {
-      setSettingsStatus(error.message || "Could not save settings.");
-      throw error;
-    } finally {
-      setSettingsLoading(false);
-    }
-  };
 
   useEffect(() => {
     if (displayUV >= 3 && !alertedRef.current && Notification.permission === "granted") {
@@ -725,13 +645,6 @@ function MainApp({ currentUser, handleLogout }) {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
       alert("Please allow notifications to enable reminders.");
-      return;
-    }
-
-    try {
-      await saveSettingsToBackend();
-    } catch {
-      alert("We couldn't save your reminder settings right now. Please try again.");
       return;
     }
 
@@ -755,7 +668,7 @@ function MainApp({ currentUser, handleLogout }) {
 
     const fireNotification = () => {
       new Notification("☀️ SunSmart Reminder", {
-        body: `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. Time to reapply sunscreen!`,
+        body: `Reminder for ${email} — UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. Time to reapply!`,
         icon: "/favicon.ico",
       });
     };
@@ -1074,7 +987,6 @@ function MainApp({ currentUser, handleLogout }) {
                 ["dashboard", "Dashboard"],
                 ["awareness", "Awareness"],
                 ["skin", "Skin Tone"],
-                ["planner", "Protection Planner"],
               ].map(([value, label]) => (
                 <Button
                   key={value}
@@ -1098,209 +1010,262 @@ function MainApp({ currentUser, handleLogout }) {
           </div>
         </motion.header>
 
-        <section className="mb-6 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-          >
-            <Card className="overflow-hidden rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
-              <CardContent className="p-0">
-                <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div className="p-6 sm:p-8">
-                    <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
-                      <MapPin className="h-4 w-4" />
-                      Live localised alert
-                    </div>
-                    <h2 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">
-                      Real-time UV guidance that feels simple, clear, and actually useful.
-                    </h2>
-                    <p className="mt-4 max-w-2xl text-slate-600">
-                      This section helps you determine the risk level and the appropriate measures you need to take according to the UV Index of a location.
-                    </p>
-
-                    <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                      <StatPill icon={MapPin} label="Location" value={searchedLocation} />
-                      <StatPill icon={TriangleAlert} label="Risk level" value={uvMeta.level} />
-                      <StatPill icon={Bell} label="Reminder mode" value="Email / Push ready" />
-                    </div>
-                  </div>
-
-                  <div className="relative flex items-center justify-center bg-slate-950 p-6 text-white sm:p-8">
-                    <div className={`absolute inset-0 bg-gradient-to-br ${uvMeta.ring} opacity-85`} />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,.24),transparent_35%)]" />
-                    <div className="relative w-full rounded-[28px] border border-white/20 bg-white/10 p-6 backdrop-blur-md">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-sm text-white/80">Current UV Index</span>
-                        <CloudSun className="h-5 w-5 text-white/90" />
-                      </div>
-                      <div className="flex items-end gap-3">
-                        <span className="text-7xl font-bold leading-none">{displayUV}</span>
-                        <Badge className="mb-2 rounded-full border-0 bg-white/15 px-3 py-1 text-white shadow-none">
-                          {uvMeta.level}
-                        </Badge>
-                      </div>
-                      <p className="mt-4 text-sm leading-6 text-white/90">{uvMeta.message}</p>
-                      {isNightTime && (
-                        <p className="mt-2 text-xs text-white/60 flex items-center gap-1">
-                          🌙 UV is 0 — no solar UV at night. Use the slider to simulate daytime levels.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="h-full rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Sparkles className="h-5 w-5" /> Quick controls
-                </CardTitle>
-                <CardDescription>Use the "Current location" option or the "Search any location" option below.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="space-y-2">
-                  <Label>Current location</Label>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-slate-400" />
-                    {myLocation}
-                  </div>
-                </div>
-
-                <div className="space-y-2" ref={searchRef}>
-                  <Label>Search any location</Label>
-                  <div className="relative">
-                    <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 gap-2 focus-within:ring-2 focus-within:ring-slate-900 focus-within:border-transparent transition-all">
-                      <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
-                      <input
-                        value={citySearch}
-                        onChange={(e) => handleCityInput(e.target.value)}
-                        onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                        placeholder="Search suburb, city or landmark..."
-                        className="flex-1 py-2.5 text-sm bg-transparent outline-none placeholder:text-slate-400"
-                      />
-                      {suggestionsLoading && (
-                        <span className="text-xs text-slate-400 shrink-0">searching…</span>
-                      )}
-                    </div>
-
-                    {showSuggestions && suggestions.length > 0 && (
-                      <div className="absolute z-50 mt-1 w-full rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-                        {suggestions.map((item, idx) => {
-                          const a = item.address || {};
-                          const primary =
-                            a.road ||
-                            a.pedestrian ||
-                            a.neighbourhood ||
-                            a.suburb ||
-                            a.city ||
-                            a.town ||
-                            a.village ||
-                            item.display_name.split(",")[0];
-                          const secondary = item.display_name.split(",").slice(1, 3).join(",").trim();
-                          const typeIcon =
-                            item.type === "administrative" || item.class === "place"
-                              ? "🏙️"
-                              : item.class === "railway" || item.class === "highway"
-                              ? "📍"
-                              : item.class === "amenity"
-                              ? "📌"
-                              : "📍";
-
-                          return (
-                            <button
-                              key={idx}
-                              onClick={() => handleSelectSuggestion(item)}
-                              className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors"
-                            >
-                              <span className="text-base mt-0.5 shrink-0">{typeIcon}</span>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-slate-900 truncate">{primary}</p>
-                                <p className="text-xs text-slate-500 truncate">{secondary}</p>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <Button className="w-full rounded-xl bg-slate-900 hover:bg-slate-800" onClick={handleGetGPS}>
-                  <MapPin className="mr-2 h-4 w-4" /> {gpsLoading ? "Detecting location..." : "Use current GPS"}
-                </Button>
-
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
-                  You can make use of the "Current location" option to use your current location for the UV index checker. You can also select an address from the "Search any location" option for checking the UV Index of a different place.
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </section>
-
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-6">
           <TabsList className="hidden" />
 
           <TabsContent value="dashboard" className="mt-0 space-y-6">
+                        <section className="mb-6 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 }}
+              >
+                <Card className="overflow-hidden rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
+                  <CardContent className="p-0">
+                        <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
+                          <div className="p-6 sm:p-8">
+                            <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
+                              
+                            </div>
+                            <h2 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">
+                              Real-time UV guidance.
+                            </h2>
+                            <p className="mt-4 max-w-2xl text-slate-600">
+                              Real-time UV index for your location — know when to cover up.
+                            </p>
+
+                            <div className="mt-5 flex gap-3 flex-wrap">
+                              <StatPill icon={MapPin} label="Location" value={searchedLocation} />
+                              <StatPill icon={TriangleAlert} label="Risk level" value={uvMeta.level} />
+                            </div>
+                          </div>
+
+                          <div className="relative flex items-center justify-center bg-slate-950 p-6 text-white sm:p-8">
+                            <div className={`absolute inset-0 bg-gradient-to-br ${uvMeta.ring} opacity-85`} />
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,.24),transparent_35%)]" />
+                            <div className="relative w-full rounded-[28px] border border-white/20 bg-white/10 p-6 backdrop-blur-md">
+                              <div className="mb-3 flex items-center justify-between">
+                                    <span className="text-sm text-white/80">Current UV Index</span>
+                                    <CloudSun className="h-5 w-5 text-white/90" />
+                              </div>
+                              <div className="flex items-end gap-3">
+                                    <span className="text-7xl font-bold leading-none">{displayUV}</span>
+                                    <Badge className="mb-2 rounded-full border-0 bg-white/15 px-3 py-1 text-white shadow-none">
+                                      {uvMeta.level}
+                                    </Badge>
+                              </div>
+                              <p className="mt-4 text-sm leading-6 text-white/90">{uvMeta.message}</p>
+                              {isNightTime && (
+                                    <p className="mt-2 text-xs text-white/60 flex items-center gap-1">
+                                      🌙 UV is 0
+                                    </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
+                <Card className="h-full rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
+                  <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Sparkles className="h-5 w-5" /> Use your Location
+                        </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                        <div className="space-y-2">
+                          <Label>Current location</Label>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-slate-400" />
+                            {myLocation}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2" ref={searchRef}>
+                          <Label>Search any location</Label>
+                          <div className="relative">
+                            <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 gap-2 focus-within:ring-2 focus-within:ring-slate-900 focus-within:border-transparent transition-all">
+                              <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                              <input
+                                    value={citySearch}
+                                    onChange={(e) => handleCityInput(e.target.value)}
+                                    onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                                    placeholder="Search suburb, city or landmark..."
+                                    className="flex-1 py-2.5 text-sm bg-transparent outline-none placeholder:text-slate-400"
+                              />
+                              {suggestionsLoading && (
+                                    <span className="text-xs text-slate-400 shrink-0">searching…</span>
+                              )}
+                            </div>
+
+                            {showSuggestions && suggestions.length > 0 && (
+                              <div className="absolute z-50 mt-1 w-full rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+                                    {suggestions.map((item, idx) => {
+                                      const a = item.address || {};
+                                      const primary =
+                                        a.road ||
+                                        a.pedestrian ||
+                                        a.neighbourhood ||
+                                        a.suburb ||
+                                        a.city ||
+                                        a.town ||
+                                        a.village ||
+                                        item.display_name.split(",")[0];
+                                      const secondary = item.display_name.split(",").slice(1, 3).join(",").trim();
+                                      const typeIcon =
+                                        item.type === "administrative" || item.class === "place"
+                                          ? "🏙️"
+                                          : item.class === "railway" || item.class === "highway"
+                                          ? "📍"
+                                          : item.class === "amenity"
+                                          ? "📌"
+                                          : "📍";
+
+                                      return (
+                                        <button
+                                          key={idx}
+                                          onClick={() => handleSelectSuggestion(item)}
+                                          className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors"
+                                        >
+                                          <span className="text-base mt-0.5 shrink-0">{typeIcon}</span>
+                                          <div className="min-w-0">
+                                                <p className="text-sm font-medium text-slate-900 truncate">{primary}</p>
+                                                <p className="text-xs text-slate-500 truncate">{secondary}</p>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <Button className="w-full rounded-xl bg-slate-900 hover:bg-slate-800" onClick={handleGetGPS}>
+                          <MapPin className="mr-2 h-4 w-4" /> {gpsLoading ? "Detecting location..." : "Use current GPS"}
+                        </Button>
+
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                          Use your current location or select a different location to check the UV level of that place.
+                        </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </section>
+
             <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-              <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TriangleAlert className="h-5 w-5" /> UV alert and response
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                    <div>
-                      <p className="text-sm text-slate-500">Current status</p>
-                      <p className="mt-1 text-xl font-semibold">{uvMeta.level} UV exposure risk</p>
-                      <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">{uvMeta.message}</p>
+              <ExpandablePanel
+                icon={<Shirt className="h-5 w-5" />}
+                title="Today's UV Protection Plan"
+                badge={<Badge className={`rounded-full border text-xs ${uvMeta.badgeClass}`}>{uvMeta.level}</Badge>}
+                summary={`${uvMeta.level} risk · ${clothingTips[0]}`}
+              >
+                <div className="mt-4 space-y-4">
+                  {/* Header label — pic 3 style */}
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-sm text-slate-500">Recommended for today</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xl font-semibold">{uvMeta.level} UV outfit guidance</p>
+                      <Badge className={`rounded-full border ${uvMeta.badgeClass}`}>{uvMeta.level}</Badge>
                     </div>
-                    <Badge className={`rounded-full border ${uvMeta.badgeClass}`}>{uvMeta.level}</Badge>
+                    <ul className="mt-3 space-y-2 text-sm text-slate-600">
+                      {clothingTips.map((tip) => (
+                        <li key={tip} className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 text-slate-400 shrink-0" />
+                          <span>{tip}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
+                  {/* Head / Eyes / Body grid */}
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      { title: "Head", text: "Hat or cap for direct sun" },
+                      { title: "Eyes", text: "Sunglasses for bright exposure" },
+                      { title: "Body", text: "Breathable long-sleeve protection" },
+                    ].map((item) => (
+                      <div key={item.title} className="rounded-2xl border border-slate-100 p-4">
+                        <p className="font-semibold text-slate-800">{item.title}</p>
+                        <p className="mt-1 text-sm text-slate-600">{item.text}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Share card */}
+                  <div id="uv-info-card" className="rounded-2xl bg-slate-950 p-5 text-white">
+                    <p className="text-sm text-white/70">☀️ SunSmart UV Info — {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}</p>
+                    <p className="mt-1 text-sm text-white/60">📍 {searchedLocation}</p>
+                    <p className="mt-3 text-4xl font-bold">{displayUV} <span className="text-lg font-normal text-white/70">UV Index</span></p>
+                    <p className="mt-1 text-base font-semibold">{uvMeta.level} Risk</p>
+                    <p className="mt-2 text-sm text-white/80">{uvMeta.message}</p>
+                    <div className="mt-3 border-t border-white/10 pt-3">
+                      <p className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-1">Sunscreen</p>
+                      <p className="text-sm text-white/80">{sunscreenTip}</p>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-1">Clothing</p>
+                      {clothingTips.map((tip) => (
+                        <p key={tip} className="text-sm text-white/80">• {tip}</p>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-white/30">Generated by SunSmart UV Awareness App</p>
+                  </div>
+
+                  {/* Share buttons */}
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-100 p-4">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <Droplets className="h-4 w-4" /> Sunscreen quantity
-                      </div>
-                      <p className="text-sm leading-6 text-slate-600">{sunscreenTip}</p>
-                    </div>
+                    <Button
+                      className="rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 text-white hover:opacity-90"
+                      onClick={() => {
+                        const caption = `☀️ UV Index: ${displayUV} (${uvMeta.level}) in ${searchedLocation}
+${uvMeta.message}
 
-                    <div className="rounded-2xl border border-slate-100 p-4">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <Shirt className="h-4 w-4" /> Clothing suggestion
-                      </div>
-                      <ul className="space-y-2 text-sm text-slate-600">
-                        {clothingTips.map((tip) => (
-                          <li key={tip} className="flex items-start gap-2">
-                            <CheckCircle2 className="mt-0.5 h-4 w-4 text-slate-400" />
-                            <span>{tip}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+Stay sun smart! #SunSmart #UVAlert #SunProtection`;
+                        navigator.clipboard.writeText(caption).then(() => {
+                          handleDownloadInfo();
+                          alert("📸 Caption copied & image downloading! Open Instagram and paste the caption.");
+                        });
+                      }}
+                    >📸 Instagram</Button>
+                    <Button
+                      className="rounded-xl bg-[#1877F2] text-white hover:bg-[#1665d8]"
+                      onClick={() => {
+                        const url = encodeURIComponent(window.location.href);
+                        const text = encodeURIComponent(`UV Index: ${displayUV} (${uvMeta.level}) in ${searchedLocation}. ${uvMeta.message} Stay sun smart!`);
+                        window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, "_blank");
+                      }}
+                    >👍 Facebook</Button>
+                    <Button
+                      className="rounded-xl bg-slate-900 text-white hover:bg-slate-700"
+                      onClick={() => {
+                        const text = encodeURIComponent(`☀️ UV Index: ${displayUV} (${uvMeta.level}) in ${searchedLocation}.
+${uvMeta.message}
+
+Stay sun smart! #SunSmart #UVAlert`);
+                        window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
+                      }}
+                    >𝕏 Twitter</Button>
+                    <Button variant="outline" className="rounded-xl bg-white" onClick={handleDownloadInfo}>⬇️ Download</Button>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </ExpandablePanel>
 
-              <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Bell className="h-5 w-5" /> Sunscreen reminder
-                  </CardTitle>
-                  <CardDescription>
-                    You can choose to opt for an application reminder which will help you remember your sunscreen application.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <ExpandablePanel
+                icon={<Bell className="h-5 w-5" />}
+                title="Sunscreen Reminder"
+                badge={reminderEnabled
+                  ? <span className="rounded-full bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 font-semibold">On ✓</span>
+                  : <span className="rounded-full bg-slate-100 text-slate-500 text-xs px-2 py-0.5">Off</span>}
+                summary={reminderEnabled
+                  ? `Reminding you every ${intervalValue} ${intervalUnit} · next at ${nextReminderPreview?.nextLabel || startTime}`
+                  : "Set a reminder to reapply sunscreen"}
+              >
+                <div className="mt-4 space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Initial application time</Label>
@@ -1311,7 +1276,6 @@ function MainApp({ currentUser, handleLogout }) {
                         className="rounded-xl"
                       />
                     </div>
-
                     <div className="space-y-2">
                       <Label>Reminder interval</Label>
                       <div className="flex gap-2">
@@ -1320,7 +1284,7 @@ function MainApp({ currentUser, handleLogout }) {
                           min={1}
                           max={99}
                           value={intervalValue}
-                          onChange={(e) => setIntervalValue(e.target.value)}
+                          onChange={(e) => setIntervalValue(Number(e.target.value))}
                           className="rounded-xl w-24"
                           placeholder="e.g. 2"
                         />
@@ -1337,42 +1301,34 @@ function MainApp({ currentUser, handleLogout }) {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Email destination</Label>
-                    <Input value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-xl" />
+                  <div className="space-y-1">
+                    <Label>Reminder email <span className="text-xs text-slate-400 font-normal">(used in notification message)</span></Label>
+                    <Input
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      className="rounded-xl"
+                    />
+                    <p className="text-xs text-slate-400">This appears in your browser notification so you know which account it's for.</p>
                   </div>
-
-                  {settingsStatus && (
-                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
-                      <p>{settingsStatus}</p>
-                    </div>
-                  )}
 
                   <div className="flex flex-wrap gap-3">
                     <Button
                       className="rounded-xl bg-slate-900 hover:bg-slate-800"
                       onClick={reminderEnabled ? handleDisableReminder : handleEnableReminder}
-                      disabled={settingsLoading}
                     >
-                      {settingsLoading
-                        ? "Saving..."
-                        : reminderEnabled
-                          ? "Reminder On ✓ (click to disable)"
-                          : "Enable reminder"}
+                      {reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
                     </Button>
-
                     <Button
                       variant="outline"
                       className="rounded-xl bg-white"
                       onClick={async () => {
-                        const perm =
-                          Notification.permission === "granted"
-                            ? "granted"
-                            : await Notification.requestPermission();
-
+                        const perm = Notification.permission === "granted"
+                          ? "granted"
+                          : await Notification.requestPermission();
                         if (perm === "granted") {
                           new Notification("☀️ SunSmart Preview", {
-                            body: `UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. This is what your reminders will look like!`,
+                            body: `Reminder for ${email} — UV is ${displayUV} (${uvMeta.level}) in ${searchedLocation}. Time to reapply sunscreen!`,
                             icon: "/favicon.ico",
                           });
                         } else {
@@ -1384,19 +1340,11 @@ function MainApp({ currentUser, handleLogout }) {
                     </Button>
                   </div>
 
-                  <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                    Next reminder at{" "}
-                    <span className="font-medium text-slate-900">
-                      {nextReminderPreview?.nextLabel || startTime}
-                    </span>
-                    {" "}→ every{" "}
-                    <span className="font-medium text-slate-900">
-                      {intervalValue} {intervalUnit}
-                    </span>
-                    .
+                  <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500">
+                    Next: <span className="font-semibold text-slate-800">{nextReminderPreview?.nextLabel || startTime}</span> → every <span className="font-semibold text-slate-800">{intervalValue} {intervalUnit}</span>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </ExpandablePanel>
             </div>
           </TabsContent>
 
@@ -1550,34 +1498,20 @@ function MainApp({ currentUser, handleLogout }) {
             </div>
 
             <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Info className="h-5 w-5" /> Know your facts
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Info className="h-5 w-5" /> Know Your Facts
                 </CardTitle>
                 <CardDescription>
-                  Built as expandable cards instead of dense paragraphs so the page feels more modern and easier to scan.
+                  Tap any card to find out whether the statement is a myth or a fact.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Accordion type="single" collapsible className="grid gap-3">
-                  {mythFacts.map((item, index) => (
-                    <AccordionItem
-                      key={item.title}
-                      value={`item-${index}`}
-                      className="rounded-2xl border border-slate-100 px-4 data-[state=open]:bg-slate-50"
-                    >
-                      <AccordionTrigger className="hover:no-underline">
-                        <div className="flex items-center gap-3 text-left">
-                          <Badge className={`rounded-full ${item.type === "Fact" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
-                            {item.type}
-                          </Badge>
-                          <span className="font-medium">{item.title}</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="text-sm leading-6 text-slate-600">{item.content}</AccordionContent>
-                    </AccordionItem>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {mythFacts.map((item) => (
+                    <FlipCard key={item.title} item={item} />
                   ))}
-                </Accordion>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1588,7 +1522,7 @@ function MainApp({ currentUser, handleLogout }) {
                 <CardHeader>
                   <CardTitle>Skin tone and UV sensitivity</CardTitle>
                   <CardDescription>
-                    Uses tile selection to match your acceptance criteria while keeping the interface friendly and visually current.
+                    Click on any skin type to view related information.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1626,7 +1560,7 @@ function MainApp({ currentUser, handleLogout }) {
               <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
                 <CardHeader>
                   <CardTitle>Selected protection guidance</CardTitle>
-                  <CardDescription>Clear recommendation text makes this page educational without feeling heavy.</CardDescription>
+                  <CardDescription>Here are some recommendation from us based on your skin type!</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
@@ -1643,142 +1577,12 @@ function MainApp({ currentUser, handleLogout }) {
                     <p className="mt-4 text-sm leading-7 text-slate-600">{skinTone.advice}</p>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-100 p-4">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                        <Shield className="h-4 w-4" /> Protection goal
-                      </div>
-                      <p className="text-sm leading-6 text-slate-600">Choose advice that feels inclusive and avoids implying only one skin type needs protection.</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-100 p-4">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                        <Sun className="h-4 w-4" /> UX note
-                      </div>
-                      <p className="text-sm leading-6 text-slate-600">Tiles are faster to scan than dropdowns and look more polished on both desktop and mobile.</p>
-                    </div>
-                  </div>
+
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          <TabsContent value="planner" className="mt-0 space-y-6">
-            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-              <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Shirt className="h-5 w-5" /> Clothing recommendation
-                  </CardTitle>
-                  <CardDescription>
-                    Here are some tips from us in order to help you stay safe under the sun!
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
-                    <div className="mb-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-500">Recommended for today</p>
-                        <p className="text-xl font-semibold">{uvMeta.level} UV outfit guidance</p>
-                      </div>
-                      <Badge className={`rounded-full border ${uvMeta.badgeClass}`}>{uvMeta.level}</Badge>
-                    </div>
-                    <ul className="space-y-3 text-sm text-slate-600">
-                      {clothingTips.map((tip) => (
-                        <li key={tip} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 text-slate-400" />
-                          <span>{tip}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {[
-                      { title: "Head", text: "Hat or cap for direct sun" },
-                      { title: "Eyes", text: "Sunglasses for bright exposure" },
-                      { title: "Body", text: "Breathable long-sleeve protection" },
-                    ].map((item) => (
-                      <div key={item.title} className="rounded-2xl border border-slate-100 p-4">
-                        <p className="font-medium">{item.title}</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">{item.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-[28px] border-white/60 bg-white/75 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Share2 className="h-5 w-5" /> Share it!
-                  </CardTitle>
-                  <CardDescription>
-                    If you found our tips and info useful, share it with your friends or click the download option to download this card as an image.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div id="uv-info-card" className="rounded-3xl bg-slate-950 p-5 text-white">
-                    <p className="text-sm text-white/70">☀️ SunSmart UV Info — {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}</p>
-                    <p className="mt-1 text-sm text-white/60">📍 {searchedLocation}</p>
-                    <p className="mt-3 text-4xl font-bold">{displayUV} <span className="text-lg font-normal text-white/70">UV Index</span></p>
-                    <p className="mt-1 text-base font-semibold">{uvMeta.level} Risk</p>
-                    <p className="mt-3 text-sm text-white/80">{uvMeta.message}</p>
-                    <div className="mt-4 border-t border-white/10 pt-4">
-                      <p className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-1">Sunscreen</p>
-                      <p className="text-sm text-white/80">{sunscreenTip}</p>
-                    </div>
-                    <div className="mt-3">
-                      <p className="text-xs text-white/50 font-semibold uppercase tracking-wider mb-1">Clothing</p>
-                      {clothingTips.map((tip) => (
-                        <p key={tip} className="text-sm text-white/80">• {tip}</p>
-                      ))}
-                    </div>
-                    <p className="mt-4 text-xs text-white/30">Generated by SunSmart UV Awareness App</p>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Button
-                      className="rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 text-white hover:opacity-90"
-                      onClick={() => {
-                        const caption = `☀️ UV Index: ${displayUV} (${uvMeta.level}) in ${searchedLocation}\n${uvMeta.message}\n\nStay sun smart! #SunSmart #UVAlert #SunProtection`;
-                        navigator.clipboard.writeText(caption).then(() => {
-                          handleDownloadInfo();
-                          alert("📸 Caption copied & image downloading!\nOpen Instagram and paste the caption.");
-                        });
-                      }}
-                    >
-                      📸 Instagram
-                    </Button>
-
-                    <Button
-                      className="rounded-xl bg-[#1877F2] text-white hover:bg-[#1665d8]"
-                      onClick={() => {
-                        const url = encodeURIComponent(window.location.href);
-                        const text = encodeURIComponent(`UV Index: ${displayUV} (${uvMeta.level}) in ${searchedLocation}. ${uvMeta.message} Stay sun smart!`);
-                        window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, "_blank");
-                      }}
-                    >
-                      👍 Facebook
-                    </Button>
-
-                    <Button
-                      className="rounded-xl bg-slate-900 text-white hover:bg-slate-700"
-                      onClick={() => {
-                        const text = encodeURIComponent(`☀️ UV Index: ${displayUV} (${uvMeta.level}) in ${searchedLocation}.\n${uvMeta.message}\n\nStay sun smart! #SunSmart #UVAlert`);
-                        window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
-                      }}
-                    >
-                      𝕏 Twitter
-                    </Button>
-
-                    <Button variant="outline" className="rounded-xl bg-white" onClick={handleDownloadInfo}>
-                      ⬇️ Download
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
         </Tabs>
 
         <footer className="mt-8 rounded-[28px] border border-white/70 bg-white/70 p-5 text-sm text-slate-500 shadow-sm backdrop-blur">
@@ -1791,6 +1595,96 @@ function MainApp({ currentUser, handleLogout }) {
     </div>
   );
 }
+
+function ExpandablePanel({ icon, title, badge, summary, children }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="rounded-[28px] border border-white/60 bg-white/75 shadow-sm backdrop-blur overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-slate-50/60 transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-slate-900 text-white shrink-0">
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-900">{title}</span>
+              {badge}
+            </div>
+            {!open && <p className="text-xs text-slate-500 truncate mt-0.5">{summary}</p>}
+          </div>
+        </div>
+        <ChevronRight className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-5 pb-5 border-t border-slate-100">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Flip Card Component ──────────────────────────────────────────────────────
+function FlipCard({ item }) {
+  const [flipped, setFlipped] = React.useState(false);
+  const isFact = item.type === "Fact";
+  return (
+    <div
+      onClick={() => setFlipped((f) => !f)}
+      style={{ perspective: "1000px", cursor: "pointer" }}
+      className="h-44"
+    >
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+          transformStyle: "preserve-3d",
+          transition: "transform 0.55s cubic-bezier(0.45, 0.05, 0.55, 0.95)",
+          transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+        }}
+      >
+        {/* FRONT */}
+        <div
+          style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+          className="absolute inset-0 rounded-2xl border border-slate-200 bg-white flex flex-col items-center justify-center p-5 text-center shadow-sm hover:shadow-md hover:border-slate-300 transition-shadow"
+        >
+          <p className="text-sm font-medium text-slate-800 leading-6">{item.title}</p>
+          <p className="mt-3 text-xs text-slate-400">Tap to reveal →</p>
+        </div>
+        {/* BACK */}
+        <div
+          style={{
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+          }}
+          className={`absolute inset-0 rounded-2xl flex flex-col justify-between p-5 shadow-sm ${
+            isFact
+              ? "bg-emerald-50 border border-emerald-200"
+              : "bg-amber-50 border border-amber-200"
+          }`}
+        >
+          <div>
+            <span
+              className={`inline-block rounded-full px-3 py-0.5 text-xs font-bold tracking-wide mb-2 ${
+                isFact ? "bg-emerald-200 text-emerald-800" : "bg-amber-200 text-amber-900"
+              }`}
+            >
+              {item.type.toUpperCase()}
+            </span>
+            <p className="text-xs leading-5 text-slate-700">{item.content}</p>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">Tap to flip back ↩</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function SunSmartUIMockup() {
   const [currentUser, setCurrentUser] = useState(null);
