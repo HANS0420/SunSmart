@@ -244,7 +244,7 @@ function getUvMeta(uv) {
 
 function StatPill({ icon: Icon, label, value }) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur min-w-[130px]">
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 min-w-[130px]">
       <div className="flex items-center gap-1.5 text-slate-500">
         <Icon className="h-3.5 w-3.5 shrink-0" />
         <span className="text-xs">{label}</span>
@@ -401,12 +401,8 @@ function AuthScreen({ onLoginSuccess }) {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-5xl grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-[32px] border border-white/70 bg-white/70 p-8 shadow-sm backdrop-blur"
-        >
+      <div className="w-full max-w-5xl grid gap-6 lg:grid-cols-[1.1fr_0.9fr]" style={{ alignItems: "start" }}>
+        <div className="hidden lg:block rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
               <Sun className="h-7 w-7" />
@@ -421,7 +417,7 @@ function AuthScreen({ onLoginSuccess }) {
             
 
             <h2 className="text-4xl font-bold tracking-tight leading-tight">
-              Welcome to SunSmart
+              Welcome to lol
             </h2>
 
             <p className="text-slate-600 leading-7">
@@ -429,14 +425,9 @@ function AuthScreen({ onLoginSuccess }) {
             </p>
 
           </div>
-        </motion.div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="rounded-[32px] border border-white/70 bg-white/80 p-6 shadow-sm backdrop-blur"
-        >
+        <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex gap-2 mb-6">
             <Button
               variant={mode === "login" ? "default" : "outline"}
@@ -573,7 +564,7 @@ function AuthScreen({ onLoginSuccess }) {
               </Button>
             </form>
           )}
-        </motion.div>
+        </div>
       </div>
     </div>
   );
@@ -957,70 +948,53 @@ function MainApp({ currentUser, handleLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] text-slate-900">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eff6ff_0%,#f8fafc_38%,#eefdf6_100%)] text-slate-900" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <motion.header
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 rounded-[28px] border border-white/70 bg-white/70 p-4 shadow-sm backdrop-blur sm:p-5"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
-                <Sun className="h-6 w-6" />
+        <header className="mb-6 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          {/* Logo row — always visible */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
+                <Sun className="h-5 w-5" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight">SunSmart</h1>
-                  <Badge variant="outline" className="rounded-full border-slate-200 bg-white/80">
-                    UV Awareness
-                  </Badge>
-                </div>
-                <p className="text-sm text-slate-500">
-                  Welcome, {currentUser?.email}
-                </p>
+              <div className="min-w-0">
+                <h1 className="text-lg font-bold tracking-tight leading-tight">SunSmart</h1>
+                <p className="text-xs text-slate-500 truncate max-w-[180px] sm:max-w-none">{currentUser?.email}</p>
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-2 justify-end">
-              {[
-                ["dashboard", "Dashboard"],
-                ["awareness", "Awareness"],
-                ["skin", "Skin Tone"],
-              ].map(([value, label]) => (
-                <Button
-                  key={value}
-                  variant={selectedTab === value ? "default" : "outline"}
-                  className={`rounded-full ${selectedTab === value ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-white/80"}`}
-                  onClick={() => setSelectedTab(value)}
-                >
-                  {label}
-                </Button>
+            {/* Desktop nav */}
+            <div className="hidden sm:flex flex-wrap gap-2 items-center">
+              {[["dashboard","Dashboard"],["awareness","Awareness"],["skin","Skin Tone"]].map(([value,label]) => (
+                <Button key={value} variant={selectedTab===value?"default":"outline"}
+                  className={`rounded-full text-sm ${selectedTab===value?"bg-slate-900 text-white hover:bg-slate-800":"bg-white"}`}
+                  onClick={() => setSelectedTab(value)}>{label}</Button>
               ))}
-
-              <Button
-                variant="outline"
-                className="rounded-full bg-white"
-                onClick={handleLogout}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
+              <Button variant="outline" className="rounded-full bg-white text-sm" onClick={handleLogout}>
+                <LogOut className="mr-1.5 h-3.5 w-3.5" /> Logout
               </Button>
             </div>
+            {/* Mobile logout icon */}
+            <Button variant="outline" className="sm:hidden rounded-full bg-white px-3" onClick={handleLogout}>
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
-        </motion.header>
+          {/* Mobile tab row */}
+          <div className="sm:hidden mt-3 flex gap-2 overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+            {[["dashboard","Dashboard"],["awareness","Awareness"],["skin","Skin Tone"]].map(([value,label]) => (
+              <Button key={value} variant={selectedTab===value?"default":"outline"}
+                className={`rounded-full text-sm shrink-0 ${selectedTab===value?"bg-slate-900 text-white":"bg-white"}`}
+                onClick={() => setSelectedTab(value)}>{label}</Button>
+            ))}
+          </div>
+        </header>
 
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-6">
           <TabsList className="hidden" />
 
           <TabsContent value="dashboard" className="mt-0 space-y-6">
                         <section className="mb-6 grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-              <motion.div
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 }}
-              >
-                <Card className="overflow-hidden rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
+              <div>
+                <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
                   <CardContent className="p-0">
                         <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
                           <div className="p-6 sm:p-8">
@@ -1040,10 +1014,10 @@ function MainApp({ currentUser, handleLogout }) {
                             </div>
                           </div>
 
-                          <div className="relative flex items-center justify-center bg-slate-950 p-6 text-white sm:p-8">
+                          <div className="relative flex items-center justify-center bg-slate-950 p-6 text-white sm:p-8 rounded-b-[28px] lg:rounded-b-none lg:rounded-r-[28px]">
                             <div className={`absolute inset-0 bg-gradient-to-br ${uvMeta.ring} opacity-85`} />
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,.24),transparent_35%)]" />
-                            <div className="relative w-full rounded-[28px] border border-white/20 bg-white/10 p-6 backdrop-blur-md">
+                            <div className="relative w-full rounded-[28px] border border-white/20 bg-white/10 p-6">
                               <div className="mb-3 flex items-center justify-between">
                                     <span className="text-sm text-white/80">Current UV Index</span>
                                     <CloudSun className="h-5 w-5 text-white/90" />
@@ -1065,14 +1039,10 @@ function MainApp({ currentUser, handleLogout }) {
                         </div>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-              >
-                <Card className="h-full rounded-[28px] border-white/60 bg-white/75 shadow-sm backdrop-blur">
+              <div>
+                <Card className="h-full rounded-[28px] border border-slate-200 bg-white shadow-sm">
                   <CardHeader className="pb-2">
                         <CardTitle className="flex items-center gap-2 text-lg">
                           <Sparkles className="h-5 w-5" /> Use your Location
@@ -1155,7 +1125,7 @@ function MainApp({ currentUser, handleLogout }) {
                         </div>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </div>
             </section>
 
             <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
@@ -1585,7 +1555,7 @@ Stay sun smart! #SunSmart #UVAlert`);
 
         </Tabs>
 
-        <footer className="mt-8 rounded-[28px] border border-white/70 bg-white/70 p-5 text-sm text-slate-500 shadow-sm backdrop-blur">
+        <footer className="mt-8 rounded-[28px] border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p>This is a prototype for the full application. Stay tuned!</p>
             <p>SunSmart ©</p>
@@ -1599,10 +1569,10 @@ Stay sun smart! #SunSmart #UVAlert`);
 function ExpandablePanel({ icon, title, badge, summary, children }) {
   const [open, setOpen] = React.useState(false);
   return (
-    <div className="rounded-[28px] border border-white/60 bg-white/75 shadow-sm backdrop-blur overflow-hidden">
+    <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-slate-50/60 transition-colors"
+        className="w-full flex items-center justify-between gap-3 p-5 text-left transition-colors touch-manipulation"
       >
         <div className="flex items-center gap-3 min-w-0">
           <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-slate-900 text-white shrink-0">
@@ -1634,7 +1604,7 @@ function FlipCard({ item }) {
   return (
     <div
       onClick={() => setFlipped((f) => !f)}
-      style={{ perspective: "1000px", cursor: "pointer" }}
+      style={{ perspective: "1000px", cursor: "pointer", WebkitTapHighlightColor: "transparent" }}
       className="h-44"
     >
       <div
