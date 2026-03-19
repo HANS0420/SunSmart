@@ -2,10 +2,12 @@ import dotenv from "dotenv";
 import { createServer } from "node:http";
 
 import {
+  authenticateUser,
   closeDatabase,
   getUserSettings,
   initDatabase,
   listAllSettings,
+  registerUser,
   saveUserSettings,
 } from "./db.js";
 
@@ -55,6 +57,41 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === "GET" && url.pathname === "/api/health") {
       json(res, 200, { ok: true, database: "postgres" });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/register") {
+      const body = await readJsonBody(req);
+      const requiredFields = ["email", "password", "name"];
+      const missing = requiredFields.filter((field) => !body[field]);
+
+      if (missing.length > 0) {
+        json(res, 400, { error: `Missing required fields: ${missing.join(", ")}` });
+        return;
+      }
+
+      const user = await registerUser(body);
+      json(res, 201, { user });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      const body = await readJsonBody(req);
+      const requiredFields = ["email", "password"];
+      const missing = requiredFields.filter((field) => !body[field]);
+
+      if (missing.length > 0) {
+        json(res, 400, { error: `Missing required fields: ${missing.join(", ")}` });
+        return;
+      }
+
+      const user = await authenticateUser(body);
+      if (!user) {
+        json(res, 401, { error: "Invalid email or password." });
+        return;
+      }
+
+      json(res, 200, { user });
       return;
     }
 

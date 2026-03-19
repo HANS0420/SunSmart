@@ -295,7 +295,7 @@ function AuthScreen({ onLoginSuccess }) {
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -320,31 +320,35 @@ function AuthScreen({ onLoginSuccess }) {
       return;
     }
 
-    const existingUsers = JSON.parse(localStorage.getItem("sunsmart_users") || "[]");
-    const alreadyExists = existingUsers.find(
-      (user) => user.email.toLowerCase() === registerEmail.toLowerCase()
-    );
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: registerEmail.trim().toLowerCase(),
+          password: registerPassword,
+          name: buildDisplayName(registerEmail),
+        }),
+      });
 
-    if (alreadyExists) {
-      setError("This email is already registered.");
-      return;
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || "We couldn't create your account right now.");
+        return;
+      }
+
+      setSuccess("Registration successful. You can now log in.");
+      setLoginEmail(registerEmail.trim().toLowerCase());
+      setRegisterEmail("");
+      setRegisterPassword("");
+      setConfirmPassword("");
+      setMode("login");
+    } catch {
+      setError("We couldn't create your account right now.");
     }
-
-    const newUser = {
-      email: registerEmail,
-      password: registerPassword,
-    };
-
-    existingUsers.push(newUser);
-    localStorage.setItem("sunsmart_users", JSON.stringify(existingUsers));
-    setSuccess("Registration successful. You can now log in.");
-    setRegisterEmail("");
-    setRegisterPassword("");
-    setConfirmPassword("");
-    setMode("login");
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -359,44 +363,63 @@ function AuthScreen({ onLoginSuccess }) {
       return;
     }
 
-    const existingUsers = JSON.parse(localStorage.getItem("sunsmart_users") || "[]");
-    const matchedUser = existingUsers.find(
-      (user) =>
-        user.email.toLowerCase() === loginEmail.toLowerCase() &&
-        user.password === loginPassword
-    );
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginEmail.trim().toLowerCase(),
+          password: loginPassword,
+        }),
+      });
 
-    if (!matchedUser) {
-      setError("Invalid email or password.");
-      return;
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || "Invalid email or password.");
+        return;
+      }
+
+      localStorage.setItem(
+        "sunsmart_current_user",
+        JSON.stringify({ email: data.user.email })
+      );
+      onLoginSuccess({ email: data.user.email });
+    } catch {
+      setError("We couldn't log you in right now.");
     }
-
-    localStorage.setItem(
-      "sunsmart_current_user",
-      JSON.stringify({ email: matchedUser.email })
-    );
-    onLoginSuccess({ email: matchedUser.email });
   };
 
-  const handleDemoLogin = () => {
+  const handleDemoLogin = async () => {
     const demoEmail = "student@monash.edu";
     const demoPassword = "123456";
 
-    const existingUsers = JSON.parse(localStorage.getItem("sunsmart_users") || "[]");
-    const demoExists = existingUsers.find(
-      (user) => user.email.toLowerCase() === demoEmail.toLowerCase()
-    );
+    setError("");
+    setSuccess("");
 
-    if (!demoExists) {
-      existingUsers.push({ email: demoEmail, password: demoPassword });
-      localStorage.setItem("sunsmart_users", JSON.stringify(existingUsers));
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: demoEmail,
+          password: demoPassword,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || "Demo login is unavailable right now.");
+        return;
+      }
+
+      localStorage.setItem(
+        "sunsmart_current_user",
+        JSON.stringify({ email: data.user.email })
+      );
+      onLoginSuccess({ email: data.user.email });
+    } catch {
+      setError("Demo login is unavailable right now.");
     }
-
-    localStorage.setItem(
-      "sunsmart_current_user",
-      JSON.stringify({ email: demoEmail })
-    );
-    onLoginSuccess({ email: demoEmail });
   };
 
   return (
@@ -417,7 +440,7 @@ function AuthScreen({ onLoginSuccess }) {
             
 
             <h2 className="text-4xl font-bold tracking-tight leading-tight">
-              Welcome to lol
+              Welcome to SunSmart
             </h2>
 
             <p className="text-slate-600 leading-7">
@@ -618,7 +641,82 @@ function MainApp({ currentUser, handleLogout }) {
     };
   }, [startTime, intervalValue, intervalUnit]);
 
-  // Settings are stored locally in state — no backend required
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedSettings() {
+      if (!currentUser?.email) return;
+
+      setSettingsLoading(true);
+      setSettingsStatus("");
+
+      try {
+        const res = await fetch(`/api/settings/${encodeURIComponent(currentUserId)}`);
+        if (res.status === 404) {
+          if (!cancelled) setSettingsStatus("");
+          return;
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || "We couldn't load your saved settings.");
+        }
+
+        if (cancelled || !data.settings) return;
+
+        setEmail(data.settings.email || currentUser.email);
+        setSkinTone(
+          skinToneOptions.find((option) => option.id === data.settings.skinTone) || skinToneOptions[1]
+        );
+        setStartTime(data.settings.startTime || startTime);
+
+        const [savedValue = "2", savedUnit = "hours"] = (data.settings.interval || "2 hours").split(" ");
+        setIntervalValue(Number(savedValue) || 2);
+        setIntervalUnit(savedUnit || "hours");
+        setSettingsStatus("Saved settings loaded.");
+      } catch (error) {
+        if (!cancelled) {
+          setSettingsStatus(error.message || "We couldn't load your saved settings.");
+        }
+      } finally {
+        if (!cancelled) {
+          setSettingsLoading(false);
+        }
+      }
+    }
+
+    loadSavedSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.email, currentUserId, startTime]);
+
+  async function saveSettingsToBackend() {
+    const payload = {
+      userId: currentUserId,
+      email: email.trim().toLowerCase(),
+      name: buildDisplayName(currentUser?.email || email),
+      location: searchedLocation,
+      skinTone: skinTone.id,
+      startTime,
+      interval: `${intervalValue} ${intervalUnit}`,
+    };
+
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "We couldn't save your reminder settings right now.");
+    }
+
+    setSettingsStatus("Saved.");
+    return data.settings;
+  }
 
 
 
@@ -633,6 +731,16 @@ function MainApp({ currentUser, handleLogout }) {
   }, [displayUV, uvMeta.level, searchedLocation]);
 
   const handleEnableReminder = async () => {
+    setSettingsStatus("");
+
+    try {
+      await saveSettingsToBackend();
+    } catch (error) {
+      setSettingsStatus(error.message || "We couldn't save your reminder settings right now.");
+      alert("We couldn't save your reminder settings right now. Please try again.");
+      return;
+    }
+
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
       alert("Please allow notifications to enable reminders.");
@@ -958,8 +1066,15 @@ function MainApp({ currentUser, handleLogout }) {
                 <Sun className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-lg font-bold tracking-tight leading-tight">SunSmart</h1>
-                <p className="text-xs text-slate-500 truncate max-w-[180px] sm:max-w-none">{currentUser?.email}</p>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-bold tracking-tight leading-tight">SunSmart</h1>
+                  <Badge variant="outline" className="rounded-full border-slate-200 bg-white text-slate-900">
+                    UV Awareness
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 truncate max-w-[180px] sm:max-w-none">
+                  Welcome, {currentUser?.email}
+                </p>
               </div>
             </div>
             {/* Desktop nav */}
@@ -1286,8 +1401,9 @@ Stay sun smart! #SunSmart #UVAlert`);
                     <Button
                       className="rounded-xl bg-slate-900 hover:bg-slate-800"
                       onClick={reminderEnabled ? handleDisableReminder : handleEnableReminder}
+                      disabled={settingsLoading}
                     >
-                      {reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
+                      {settingsLoading ? "Saving..." : reminderEnabled ? "Reminder On ✓ (click to disable)" : "Enable reminder"}
                     </Button>
                     <Button
                       variant="outline"
@@ -1309,6 +1425,12 @@ Stay sun smart! #SunSmart #UVAlert`);
                       Preview notification
                     </Button>
                   </div>
+
+                  {settingsStatus ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                      {settingsStatus}
+                    </div>
+                  ) : null}
 
                   <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500">
                     Next: <span className="font-semibold text-slate-800">{nextReminderPreview?.nextLabel || startTime}</span> → every <span className="font-semibold text-slate-800">{intervalValue} {intervalUnit}</span>

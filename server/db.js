@@ -24,7 +24,8 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS users (
       user_id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      password TEXT
     );
 
     CREATE TABLE IF NOT EXISTS user_settings (
@@ -47,14 +48,22 @@ export async function initDatabase() {
     );
   `);
 
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS password TEXT
+  `);
+
   await pool.query(
     `
-      INSERT INTO users (user_id, email, name)
-      VALUES ($1, $2, $3)
+      INSERT INTO users (user_id, email, name, password)
+      VALUES ($1, $2, $3, $4)
       ON CONFLICT (user_id)
-      DO NOTHING
+      DO UPDATE SET
+        email = EXCLUDED.email,
+        name = EXCLUDED.name,
+        password = COALESCE(users.password, EXCLUDED.password)
     `,
-    [seedUserId, "student@monash.edu", "SunSmart Demo User"],
+    [seedUserId, "student@monash.edu", "SunSmart Demo User", "123456"],
   );
 
   await pool.query(
@@ -166,6 +175,82 @@ export async function saveUserSettings({
   return getUserSettings(effectiveUserId);
 }
 
+export async function registerUser({ email, password, name }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const { rows } = await pool.query(
+    `
+      SELECT user_id, email, name, password
+      FROM users
+      WHERE email = $1
+      LIMIT 1
+    `,
+    [normalizedEmail],
+  );
+
+  const existing = rows[0];
+
+  if (existing?.password) {
+    throw new Error("This email is already registered.");
+  }
+
+  if (existing) {
+    await pool.query(
+      `
+        UPDATE users
+        SET name = $2, password = $3
+        WHERE user_id = $1
+      `,
+      [existing.user_id, name, password],
+    );
+
+    return {
+      userId: existing.user_id,
+      email: normalizedEmail,
+      name,
+    };
+  }
+
+  const userId = buildUserIdFromEmail(normalizedEmail);
+
+  await pool.query(
+    `
+      INSERT INTO users (user_id, email, name, password)
+      VALUES ($1, $2, $3, $4)
+    `,
+    [userId, normalizedEmail, name, password],
+  );
+
+  return {
+    userId,
+    email: normalizedEmail,
+    name,
+  };
+}
+
+export async function authenticateUser({ email, password }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const { rows } = await pool.query(
+    `
+      SELECT user_id, email, name, password
+      FROM users
+      WHERE email = $1
+      LIMIT 1
+    `,
+    [normalizedEmail],
+  );
+
+  const user = rows[0];
+  if (!user || user.password !== password) {
+    return null;
+  }
+
+  return {
+    userId: user.user_id,
+    email: user.email,
+    name: user.name,
+  };
+}
+
 export function getDatabasePath() {
   return "postgresql";
 }
@@ -241,4 +326,8 @@ export async function logReminder({
 
 export async function closeDatabase() {
   await pool.end();
+}
+
+function buildUserIdFromEmail(email) {
+  return email.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `user-${randomUUID()}`;
 }
